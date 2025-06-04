@@ -1,0 +1,345 @@
+﻿@model CityOffice
+@inject CurrencyService _currencyService
+
+<div class="currency-container">
+    <div class="currency-header">
+        <h1><i class="fas fa-coins"></i> @Model.Location - Курсы валют</h1>
+        <div class="datetime-info">
+            <div id="currentDateTime"></div>
+            <div id="lastUpdate">Последнее обновление: @DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")</div>
+        </div>
+    </div>
+
+    <div class="currency-card">
+        <table class="currency-table" id="ratesTable">
+            <thead>
+            <tr>
+                <th class="currency-name">Валюта</th>
+                <th class="currency-flag"></th>
+                <th class="currency-rate">Покупка</th>
+                <th class="currency-rate">Продажа</th>
+                <th class="currency-trend"></th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var currency in Model.Currencies)
+            {
+                <tr data-currency="@currency.Name">
+                    <td class="currency-name">@GetCurrencyName(currency.Name)</td>
+                    <td class="currency-flag">
+                        <div class="flag-icon @GetFlagClass(currency.Name)"></div>
+                        <img src=""/>
+                    </td>
+                    <td class="currency-rate purchase">@currency.Purchase.ToString("N2")</td>
+                    <td class="currency-rate sale">@currency.Sale.ToString("N2")</td>
+                    <td class="currency-trend">
+                        <i class="trend-icon fas fa-equals"></i>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        <button onclick="manualUpdate()">Обновить вручную</button>
+    </div>
+
+    <div class="currency-footer">
+        <p>Курсы обновляются в реальном времени</p>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script>
+        // Подключение к SignalR Hub
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/CurrencyHubService")
+            .withAutomaticReconnect()
+            .configureLogging(signalR.LogLevel.Information)
+            .build();
+
+
+        // Обработчик обновления курсов
+        connection.on("ReceiveCurrencyUpdate", (officeData) => {
+            console.log("Received update:", officeData);
+            updateRatesTable(officeData);
+            updateLastUpdateTime();
+            showNotification('Курсы обновлены');
+        });
+
+        // Запуск соединения
+        async function startConnection() {
+            try {
+                await connection.start();
+                console.log("SignalR Connected.");
+                await connection.invoke("JoinGroup", "@Model.Id");
+
+                // Запускаем периодическую проверку
+                setInterval(checkUpdates, 60000);
+                checkUpdates(); // Первая проверка сразу
+            } catch (err) {
+                console.log("SignalR Connection Error:", err);
+                setTimeout(startConnection, 5000);
+            }
+
+
+        }
+
+        async function checkUpdates() {
+            try {
+                console.log("Checking for updates...");
+                const response = await fetch(`/api/rates?office=@Model.Id&lastHash=${currentHash}`);
+                if (!response.ok) throw new Error('Network error');
+                const data = await response.json();
+                console.log("Update check result:", data);
+
+                if (data.Changed && data.Data) {
+                    console.log("Data changed, updating...");
+                    currentHash = data.Hash;
+                    updateRatesTable(data.Data);
+                    updateLastUpdateTime();
+                }
+            } catch (error) {
+                console.error('Update check error:', error);
+            }
+            
+
+        }
+        
+        startConnection();
+
+        // Форматирование даты и времени
+        function formatDateTime(date) {
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const year = date.getFullYear();
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const seconds = date.getSeconds().toString().padStart(2, '0');
+
+            return `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
+        }
+
+        // Обновление текущей даты и времени
+        function updateCurrentDateTime() {
+            const now = new Date();
+            document.getElementById('currentDateTime').textContent =
+                `Текущая дата и время: ${formatDateTime(now)}`;
+        }
+
+        // Обновление времени последнего обновления
+        function updateLastUpdateTime() {
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent =
+                `Последнее обновление: ${formatDateTime(now)}`;
+        }
+
+        // Обновление таблицы с анимацией
+        function updateRatesTable(officeData) {
+            officeData.Currencies.forEach(currency => {
+                const row = document.querySelector(`tr[data-currency="${currency.Name}"]`);
+                if (row) {
+                    const purchaseCell = row.querySelector('.purchase');
+                    const saleCell = row.querySelector('.sale');
+                    const trendIcon = row.querySelector('.trend-icon');
+
+                    // Сохраняем старые значения для сравнения
+                    const oldPurchase = parseFloat(purchaseCell.textContent);
+                    const oldSale = parseFloat(saleCell.textContent);
+
+                    // Анимация изменения значений
+                    animateValueChange(purchaseCell, currency.Purchase);
+                    animateValueChange(saleCell, currency.Sale);
+
+                    // Обновление иконки тренда
+                    updateTrendIcon(trendIcon, oldPurchase, currency.Purchase);
+                }
+            });
+        }
+
+        // Анимация изменения значения
+        function animateValueChange(element, newValue) {
+            const oldValue = parseFloat(element.textContent);
+            if (oldValue === newValue) return;
+
+            element.classList.remove('increase', 'decrease');
+            element.classList.add(newValue > oldValue ? 'increase' : 'decrease');
+
+            setTimeout(() => {
+                element.textContent = newValue.toFixed(2);
+                setTimeout(() => {
+                    element.classList.remove('increase', 'decrease');
+                }, 1000);
+            }, 500);
+        }
+
+        // Обновление иконки тренда
+        function updateTrendIcon(element, oldValue, newValue) {
+            if (newValue > oldValue) {
+                element.className = 'trend-icon fas fa-arrow-up increase';
+            } else if (newValue < oldValue) {
+                element.className = 'trend-icon fas fa-arrow-down decrease';
+            } else {
+                element.className = 'trend-icon fas fa-equals';
+            }
+        }
+
+        // Уведомление
+        function showNotification(message) {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.innerHTML = `<i class="fas fa-sync-alt"></i> ${message}`;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.classList.add('fade-out');
+                setTimeout(() => notification.remove(), 500);
+            }, 3000);
+        }
+
+        function manualUpdate() {
+            fetch(`/api/rates?office=${office}&lastHash=${currentHash}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.Changed && data.Data) {
+                        updateRatesTable(data.Data);
+                    }
+                });
+        }
+
+        // Обновление времени каждую секунду
+        setInterval(updateCurrentDateTime, 1000);
+        updateCurrentDateTime();
+    </script>
+
+    <style>
+        /* Обновленные стили */
+        .currency-container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .currency-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+
+        .currency-header h1 {
+            color: #2c3e50;
+            margin: 0;
+            font-size: 32px;
+            font-weight: 600;
+        }
+
+        .datetime-info {
+            text-align: right;
+            font-size: 15px;
+            color: #5a6268;
+            margin-top: 10px;
+        }
+
+        #currentDateTime {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+
+        #lastUpdate {
+            font-style: italic;
+            color: #6c757d;
+        }
+
+        .currency-card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .currency-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .currency-table th {
+            background-color: #3498db;
+            color: white;
+            padding: 16px;
+            text-align: center;
+            font-weight: 500;
+            position: sticky;
+            top: 0;
+        }
+
+        .currency-table td {
+            padding: 14px 16px;
+            text-align: center;
+            border-bottom: 1px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+
+        .currency-table tr:hover td {
+            background-color: #f8f9fa;
+        }
+
+        .currency-name {
+            font-weight: 600;
+            color: #2c3e50;
+            text-align: left;
+        }
+
+        .currency-rate {
+            font-family: 'Courier New', monospace;
+            font-size: 18px;
+            font-weight: bold;
+            transition: all 0.5s ease;
+        }
+
+        .increase {
+            color: #28a745;
+            background-color: rgba(40, 167, 69, 0.1);
+        }
+
+        .decrease {
+            color: #dc3545;
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+
+        /* Остальные стили остаются без изменений */
+    </style>
+}
+
+@functions {
+
+    string GetCurrencyName(string code)
+    {
+        return code switch
+        {
+            "USD" => "Доллар США",
+            "EUR" => "Евро",
+            "CNY" => "Китайский юань",
+            "GBP" => "Фунт стерлингов",
+            _ => code
+        };
+    }
+
+    string GetFlagClass(string code)
+    {
+        return code.ToLower() switch
+        {
+            "usd" => "usd",
+            "eur" => "eur",
+            "cny" => "cny",
+            "gbp" => "gbp",
+            _ => ""
+        };
+    }
+
+}
