@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML\\CourseXML.csproj": {}
+    "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML-main\\CourseXML-main\\CourseXML\\CourseXML.csproj": {}
   },
   "projects": {
-    "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML\\CourseXML.csproj": {
+    "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML-main\\CourseXML-main\\CourseXML\\CourseXML.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML\\CourseXML.csproj",
+        "projectUniqueName": "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML-main\\CourseXML-main\\CourseXML\\CourseXML.csproj",
         "projectName": "CourseXML",
-        "projectPath": "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML\\CourseXML.csproj",
+        "projectPath": "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML-main\\CourseXML-main\\CourseXML\\CourseXML.csproj",
         "packagesPath": "C:\\Users\\daniil.kondryakov\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML\\obj\\",
+        "outputPath": "C:\\Users\\daniil.kondryakov\\Desktop\\CourseXML-main\\CourseXML-main\\CourseXML-main\\CourseXML\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\daniil.kondryakov\\AppData\\Roaming\\NuGet\\NuGet.Config"

@@ -30,22 +30,32 @@ public class CourseController : Controller
         return View(officeData);
     }
 
-    [HttpGet("api/rates")]
-    public async Task<IActionResult> GetRates(string office, string? lastHash)
+    [HttpGet("/api/rates")]
+    public async Task<IActionResult> GetRates([FromQuery] string office, [FromQuery] string? lastHash)
     {
+        _logger.LogInformation("Получение курсов для офиса {Office} (LastHash: {LastHash})", office, lastHash);
+
+        if (string.IsNullOrWhiteSpace(office))
+            return BadRequest("Не указан офис");
+
+       
         await _currencyService.CheckAndUpdateRates();
-    
+
         var officeData = _currencyService.GetOffice(office);
         if (officeData == null)
-            return NotFound();
+        {
+            _logger.LogWarning("Офис {Office} не найден при запросе API", office);
+            return NotFound($"Офис '{office}' не найден");
+        }
 
         var currentHash = _currencyService.GetCurrentHash();
-        var dataChanged = lastHash != currentHash;
+        bool hasChanged = lastHash != currentHash;
 
-        return Ok(new {
-            Changed = dataChanged,
+        return Ok(new
+        {
+            Changed = hasChanged,
             Hash = currentHash,
-            Data = dataChanged ? officeData : null
+            Data = hasChanged ? officeData : null
         });
     }
 }

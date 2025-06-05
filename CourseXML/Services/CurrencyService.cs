@@ -1,4 +1,7 @@
+using System.Collections;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text.Json;
 using System.Xml.Linq;
 using CourseXML.Models;
 using Microsoft.AspNetCore.SignalR;
@@ -7,73 +10,70 @@ public class CurrencyService
 {
     private readonly string _currentXmlPath;
     private readonly string _archiveFolder;
+    private readonly ILogger<CurrencyService> _logger;
+    private readonly IHubContext<CurrencyHub> _hubContext;
+    private readonly HttpClient _httpClient;
     private readonly string _sourceXmlPath;
+    private FileSystemWatcher? _fileWatcher;
+    private readonly object _lock = new();
     private string _lastHash = string.Empty;
     private List<CityOffice> _offices = new();
-    private readonly object _lock = new();
-    private readonly ILogger<CurrencyService> _logger;
-    private readonly IHubContext<CurrencyHubService> _hubContext;
+    private bool _isUpdating = false;
+    private readonly Timer _updateTimer;
+    private readonly TimeSpan _updateInterval = TimeSpan.FromSeconds(5);
 
+  
+    
     public CurrencyService(
-        IWebHostEnvironment env, 
+        IWebHostEnvironment env,
         ILogger<CurrencyService> logger,
-        IHubContext<CurrencyHubService> hubContext)
+        IHubContext<CurrencyHub> hubContext,
+        string sourceXmlPath=@"O:\q\current\rates.xml")
     {
         _logger = logger;
         _hubContext = hubContext;
+        _sourceXmlPath = sourceXmlPath;
         _currentXmlPath = Path.Combine(env.ContentRootPath, "Data", "current", "rates.xml");
         _archiveFolder = Path.Combine(env.ContentRootPath, "Data", "archive");
-        _sourceXmlPath = Path.Combine(env.ContentRootPath, "Data", "source", "rates_source.xml");
 
         Directory.CreateDirectory(Path.GetDirectoryName(_currentXmlPath)!);
         Directory.CreateDirectory(_archiveFolder);
-        InitializeData();
-    }
 
-    private void InitializeData()
-    {
-        lock (_lock)
-        {
-            if (!File.Exists(_currentXmlPath))
-            {
-                if (File.Exists(_sourceXmlPath))
-                {
-                    File.Copy(_sourceXmlPath, _currentXmlPath);
-                    _logger.LogInformation($"Скопировано из исходного кода в: {_currentXmlPath}");
-                }
-                else
-                {
-                    _logger.LogError($"Исходный файл не найден: {_sourceXmlPath}");
-                    new XDocument(new XElement("exchangeRates")).Save(_currentXmlPath);
-                }
-            }
-            else
-            {
-                _logger.LogInformation($"Использование существующего файла: {_currentXmlPath}");
-            }
-
-            LoadCurrentData();
-
-            if (_offices.Count == 0)
-            {
-                _logger.LogError("Нет загруженых! Проверьте XML файл: " + _currentXmlPath);
-            }
-        }
+        LoadCurrentData();
+        InitFileWatcher();
+        
+        _updateTimer = new Timer(async _ => await CheckAndUpdateRates(), 
+            null, 
+            _updateInterval, 
+            _updateInterval);
     }
 
     private void LoadCurrentData()
     {
-        try
+        lock (_lock)
         {
-            var xml = XDocument.Load(_currentXmlPath);
-            _offices = ParseXml(xml);
-            _lastHash = CalculateFileHash(_currentXmlPath);
-        }
-        catch (Exception ex)
-        {
-            // Логирование ошибки
-            Console.WriteLine($"Ошибка загрузки XML: {ex.Message}");
-            _offices = new List<CityOffice>();
+            try
+            {
+                if (!File.Exists(_currentXmlPath))
+                {
+                    _logger.LogWarning("Файл не найден: {Path}. Создаём пустой.", _currentXmlPath);
+                    new XDocument(new XElement("exchangeRates")).Save(_currentXmlPath);
+                    _offices = new();
+                    return;
+                }
+
+                var content = File.ReadAllText(_currentXmlPath);
+                var xml = XDocument.Parse(content);
+                _offices = ParseXml(xml);
+                _lastHash = CalculateFileHash(_currentXmlPath);
+
+                _logger.LogInformation("Загружено {_count} офисов.", _offices.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка загрузки XML");
+                _offices = new();
+            }
         }
     }
 
@@ -81,144 +81,186 @@ public class CurrencyService
     {
         try
         {
-            var offices = xml.Root?.Elements("office")
-                .Where(o => o.Attribute("id") != null)
+            return xml.Root?.Elements("office")
+                .Where(office => office.Attribute("id") != null && office.Attribute("location") != null)
                 .Select(office => new CityOffice
                 {
-                    Id = office.Attribute("id")?.Value?.Trim(),
-                    Location = office.Attribute("location")?.Value,
+                    Id = office.Attribute("id").Value,
+                    Location = office.Attribute("location").Value,
                     Currencies = office.Elements("currency")
-                        .Where(c => c.Element("name") != null)
-                        .Select(c =>
+                        .Where(c => c.Element("name") != null && 
+                                    c.Element("purchase") != null && 
+                                    c.Element("sale") != null)
+                        .Select(c => 
                         {
-                            // Добавляем логирование для отладки
-                            var name = c.Element("name")?.Value?.Trim();
-                            var purchaseStr = c.Element("purchase")?.Value;
-                            var saleStr = c.Element("sale")?.Value;
-
-                            _logger.LogDebug($"Анализ валюты: {name}, purchase: {purchaseStr}, sale: {saleStr}");
-
-                            decimal.TryParse(purchaseStr,
-                                NumberStyles.Any,
-                                CultureInfo.InvariantCulture,
-                                out var purchase);
-
-                            decimal.TryParse(saleStr,
-                                NumberStyles.Any,
-                                CultureInfo.InvariantCulture,
-                                out var sale);
-
-                            return new CurrencyRate
+                            try
                             {
-                                Name = name ?? "USD",
-                                Purchase = purchase,
-                                Sale = sale
-                            };
-                        }).ToList()
+                                return new CurrencyRate
+                                {
+                                    Name = c.Element("name").Value,
+                                    Purchase = decimal.Parse(c.Element("purchase").Value, CultureInfo.InvariantCulture),
+                                    Sale = decimal.Parse(c.Element("sale").Value, CultureInfo.InvariantCulture)
+                                };
+                            }
+                            catch (FormatException ex)
+                            {
+                                _logger.LogWarning($"Ошибка парсинга курса валюты: {ex.Message}");
+                                return null;
+                            }
+                        })
+                        .Where(c => c != null)
+                        .ToList()
                 })
-                .Where(o => !string.IsNullOrEmpty(o.Id))
+                .Where(office => office != null && office.Currencies.Any())
                 .ToList() ?? new List<CityOffice>();
-
-            _logger.LogInformation(
-                $"Анализ offices: {string.Join(", ", offices.Select(o => $"{o.Id} ({o.Location})"))}");
-            return offices;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error parsing XML");
+            _logger.LogError(ex, "Ошибка парсинга XML");
             return new List<CityOffice>();
         }
     }
-
-
+    
     public async Task CheckAndUpdateRates()
     {
-        bool hasChanges = false;
-    
-        lock (_lock)
+        if (!File.Exists(_sourceXmlPath)) 
         {
-            if (!File.Exists(_sourceXmlPath)) 
-            {
-                _logger.LogWarning("Source XML file not found");
-                return;
-            }
-
-            var newHash = CalculateFileHash(_sourceXmlPath);
-            if (newHash == _lastHash) return;
-
-            try
-            {
-                ArchiveCurrentData();
-                File.Copy(_sourceXmlPath, _currentXmlPath, true);
-                LoadCurrentData();
-                hasChanges = true;
-                _logger.LogInformation("Обновление прошло успешно:)");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Ошибка при обновлении:(");
-                return;
-            }
+            _logger.LogWarning("Source XML file not found at {Path}", _sourceXmlPath);
+            return;
         }
 
-        if (hasChanges)
+        try
         {
+            // Читаем исходный файл с блокировкой для избежания конфликтов
+            XDocument sourceXml;
+            lock (_lock)
+            {
+                sourceXml = XDocument.Load(_sourceXmlPath);
+            }
+
+            var sourceOffices = ParseXml(sourceXml);
+        
+            if (AreEqual(_offices, sourceOffices)) 
+            {
+                _logger.LogDebug("No changes detected in currency rates");
+                return;
+            }
+
+            _logger.LogInformation("Currency rates changes detected, updating...");
+
+            // Архивируем текущие данные
+            ArchiveCurrentData();
+
+            // Обновляем текущий файл
+            lock (_lock)
+            {
+                sourceXml.Save(_currentXmlPath);
+                _offices = sourceOffices;
+                _lastHash = CalculateFileHash(_currentXmlPath);
+            }
+
+            // Отправляем обновления через SignalR
+            await SendUpdatesToClients();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка обновления курсов валют");
+        }
+    }
+    
+    private async Task SendUpdatesToClients()
+    {
+        try
+        {
+            _logger.LogInformation($"Попытка отправить обновления для {_offices.Count} офисов");
+        
             foreach (var office in _offices)
             {
                 try
                 {
-                    await _hubContext.Clients.Group(office.Id)
-                        .SendAsync("ReceiveCurrencyUpdate", office);
-                    _logger.LogInformation($"Sent update to group: {office.Id}");
+                    _logger.LogInformation($"Отправка обновления для офиса {office.Id}");
+                    await _hubContext.Clients.Group(office.Id).SendAsync("ReceiveUpdate", office);
+                    _logger.LogInformation($"Успешно отправлено обновление для офиса {office.Id}");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, $"Error sending update to group: {office.Id}");
+                    _logger.LogError(ex, $"Ошибка отправки для офиса {office.Id}");
                 }
             }
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Критическая ошибка при отправке обновлений");
+        }
     }
-
-
+    
+    
+    private bool AreEqual(List<CityOffice> a, List<CityOffice> b)
+    {
+        // Простое сравнение без хешей
+        return JsonSerializer.Serialize(a) == JsonSerializer.Serialize(b);
+    }
+   
     private void ArchiveCurrentData()
     {
-        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        var archivePath = Path.Combine(_archiveFolder, $"rates_{timestamp}.xml");
-        File.Copy(_currentXmlPath, archivePath);
+        var archiveName = $"rates_{DateTime.Now:yyyyMMdd_HHmmss}.xml";
+        File.Copy(_currentXmlPath, Path.Combine(_archiveFolder, archiveName));
     }
+    
 
+    private void InitFileWatcher()
+    {
+        try 
+        {
+            var path = Path.GetDirectoryName(_sourceXmlPath);
+            _logger.LogInformation($"Инициализация FileSystemWatcher для пути: {path}");
+        
+            _fileWatcher = new FileSystemWatcher
+            {
+                Path = path,
+                Filter = Path.GetFileName(_sourceXmlPath),
+                NotifyFilter = NotifyFilters.LastWrite,
+                EnableRaisingEvents = true
+            };
+
+            _fileWatcher.Changed += async (s, e) => 
+            {
+                _logger.LogInformation($"Обнаружено изменение файла: {e.FullPath}");
+                await Task.Delay(500);
+                await CheckAndUpdateRates();
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка инициализации FileSystemWatcher");
+        }
+    }
+    
     private string CalculateFileHash(string filePath)
     {
-        try
-        {
-            using var md5 = System.Security.Cryptography.MD5.Create();
-            using var stream = File.OpenRead(filePath);
-            var hash = md5.ComputeHash(stream);
-            return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-        }
-        catch
-        {
-            return string.Empty;
-        }
+        using var md5 = MD5.Create();
+        using var stream = File.OpenRead(filePath);
+        var hashBytes = md5.ComputeHash(stream);
+        return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
     }
 
     public CityOffice? GetOffice(string officeId)
     {
-        if (string.IsNullOrWhiteSpace(officeId))
-            return null;
-
         lock (_lock)
         {
-            var office = _offices.FirstOrDefault(o =>
-                string.Equals(o.Id, officeId, StringComparison.OrdinalIgnoreCase));
-
-            _logger.LogInformation(office == null
-                ? $"Office '{officeId}' не найден. Доступный: {string.Join(", ", _offices.Select(o => o.Id))}"
-                : $"Ищем office: {office.Id} ({office.Location})");
-
+            var office = _offices.FirstOrDefault(o => 
+                o.Id.Equals(officeId, StringComparison.OrdinalIgnoreCase));
+        
+            if (office == null)
+            {
+                _logger.LogWarning("Офис {OfficeId} не найден. Доступные: {Offices}", 
+                    officeId, string.Join(", ", _offices.Select(o => o.Id)));
+            }
+        
             return office;
         }
     }
+    
 
     public string GetCurrentHash()
     {
@@ -227,4 +269,5 @@ public class CurrencyService
             return _lastHash;
         }
     }
+    
 }

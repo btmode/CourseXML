@@ -1,174 +1,178 @@
-html {
-  font-size: 14px;
-}
-
-@media (min-width: 768px) {
-  html {
-    font-size: 16px;
-  }
-}
-
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
-}
-
-html {
-  position: relative;
-  min-height: 100%;
+:root {
+  --primary-color: #3498db;
+  --text-color: #2c3e50;
+  --bg-color: rgba(255, 255, 255, 0.95);
+  --border-color: rgba(0, 0, 0, 0.1);
+  --font-bold: 600;
 }
 
 body {
-  margin-bottom: 60px;
-}
-
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-  color: var(--bs-secondary-color);
-  text-align: end;
-}
-
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-  text-align: start;
-}
-
-
-.currency-container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.currency-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.currency-header h1 {
-  color: #2c3e50;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  font-family: 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
+  color: var(--text-color);
   margin: 0;
-  font-size: 28px;
+  padding: 20px;
 }
 
-.currency-header h1 i {
-  margin-right: 10px;
-  color: #f39c12;
-}
 
-.last-update {
-  display: flex;
-  flex-direction: column;
-  text-align: right;
-  font-size: 14px;
-  color: #7f8c8d;
-}
-
-.currency-card {
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-}
-
+/* Основные стили таблицы с фиксированными колонками */
 .currency-table {
   width: 100%;
+  max-width: 800px;
+  margin: 80px auto;
   border-collapse: collapse;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  table-layout: fixed; /* Фиксированная ширина колонок */
+}
+
+.currency-table thead {
+  background-color: var(--primary-color);
+  color: white;
 }
 
 .currency-table th {
-  background-color: #3498db;
-  color: white;
-  padding: 15px;
+  padding: 20px;
   text-align: center;
+  font-weight: 700;
+  font-size: 30px;
 }
+
+/* Фиксированные ширины колонок */
+.currency-table th:nth-child(1) { width: 280px; text-align: center;} /* Валюта */
+.currency-table th:nth-child(2) { width: 300px; text-align: center;} /* Покупка */
+.currency-table th:nth-child(3) { width: 300px; text-align: center;} /* Продажа */
 
 .currency-table td {
-  padding: 15px;
+  padding: 20px;
   text-align: center;
-  border-bottom: 1px solid #ecf0f1;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: middle;
+  font-size: 35px;
 }
 
+/* Стили для строк с валютами */
 .currency-name {
-  font-weight: bold;
-  color: #2c3e50;
-  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  justify-content: flex-start;
+  padding-left: 20px; /* Добавляем отступ слева */
 }
 
-.currency-rate {
-  font-family: 'Courier New', monospace;
-  font-size: 18px;
-  font-weight: bold;
-}
-
+/* Стили для флагов */
 .flag-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
   display: inline-block;
-  width: 24px;
-  height: 18px;
-  background-size: cover;
-  border-radius: 2px;
+  flex-shrink: 0; /* Запрещаем сжатие */
 }
 
-.flag-icon.usd { background-image: url('https://cdn.jsdelivr.net/gh/lipis/flag-icons/flags/4x3/us.svg'); }
-.flag-icon.eur { background-image: url('https://cdn.jsdelivr.net/gh/lipis/flag-icons/flags/4x3/eu.svg'); }
-.flag-icon.gbp { background-image: url('https://cdn.jsdelivr.net/gh/lipis/flag-icons/flags/4x3/gb.svg'); }
-.flag-icon.cny { background-image: url('https://cdn.jsdelivr.net/gh/lipis/flag-icons/flags/4x3/cn.svg'); }
+/* Ваши оригинальные флаги */
+.flag-icon.flag-usd { background-image: url('/images/USD.png'); }
+.flag-icon.flag-eur { background-image: url('/images/EUR.png'); }
+.flag-icon.flag-gbp { background-image: url('/images/GBP.png'); }
+.flag-icon.flag-cny { background-image: url('/images/CNY.png'); }
 
-.trend-icon {
-  font-size: 18px;
-}
-
-.increase {
-  color: #27ae60;
-}
-
-.decrease {
-  color: #e74c3c;
-}
-
-.currency-footer {
-  margin-top: 15px;
+/* Стили для значений курсов */
+.purchase, .sale {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 35px;
+  font-weight: 600;
+  display: inline-block;
+  width: 100%; /* Занимаем всю ширину ячейки */
   text-align: center;
-  font-size: 12px;
-  color: #95a5a6;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+  .currency-table {
+    table-layout: fixed;
+  }
+
+  .currency-table th,
+  .currency-table td {
+    padding: 15px 10px;
+    font-size: 24px;
+    text-align: center;
+  }
+
+  .currency-name {
+    gap: 15px;
+    padding-left: 10px;
+  }
+
+  .flag-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .purchase, .sale {
+    font-size: 24px;
+  }
+}
+
+/* Остальные стили остаются без изменений */
+.currency-header {
+  max-width: 900px;
+  margin: 0 auto 25px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.datetime-info {
+  text-align: right;
+  font-size: 15px;
+  color: #5a6268;
+  font-weight: var(--font-bold);
+}
+
+#currentDateTime, #lastUpdate {
+  font-weight: 700;
+}
+
+/* Анимации */
+@keyframes highlight {
+  0% { background-color: rgba(52, 152, 219, 0.15); }
+  100% { background-color: transparent; }
+}
+
+.updating {
+  animation: highlight 1.5s ease-out;
 }
 
 .notification {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
-  padding: 15px 20px;
-  background-color: #2ecc71;
+  bottom: 25px;
+  right: 25px;
+  padding: 16px 24px;
+  background-color: var(--primary-color);
   color: white;
-  border-radius: 5px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
   z-index: 1000;
+  font-weight: 700;
+  font-size: 15px;
   animation: fadeIn 0.3s;
 }
 
-.notification i {
-  margin-right: 10px;
+.increase {
+  color: #28a745;
+  background-color: rgba(40, 167, 69, 0.1);
 }
 
-.fade-out {
-  animation: fadeOut 0.5s;
-  opacity: 0;
+.decrease {
+  color: #dc3545;
+  background-color: rgba(220, 53, 69, 0.1);
 }
-
-@keyframes fadeIn {
-   from { opacity: 0; transform: translateY(20px); }
-   to { opacity: 1; transform: translateY(0); }
- }
-
-@keyframes fadeOut {
-   from { opacity: 1; }
-   to { opacity: 0; }
- }
-
-@keyframes pulse {
-   0% { transform: scale(1); }
-   50% { transform: scale(1.05); }
-   100% { transform: scale(1); }
- }
