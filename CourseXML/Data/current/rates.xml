@@ -3,8 +3,8 @@
   <office id="tlt" location="Тольятти">
     <currency>
       <name>USD</name>
-      <purchase>81.20</purchase>
-      <sale>77.50</sale>
+      <purchase>85.30</purchase>
+      <sale>82.20</sale>
     </currency>
     <currency>
       <name>EUR</name>
@@ -13,8 +13,8 @@
     </currency>
     <currency>
       <name>GBP</name>
-      <purchase>110.10</purchase>
-      <sale>104.00</sale>
+      <purchase>30.00</purchase>
+      <sale>115.00</sale>
     </currency>
     <currency>
       <name>CNY</name>
@@ -37,8 +37,8 @@
   <office id="msk" location="Москва">
     <currency>
       <name>USD</name>
-      <purchase>87.11</purchase>
-      <sale>90.50</sale>
+      <purchase>83.00</purchase>
+      <sale>78.50</sale>
     </currency>
     <currency>
       <name>EUR</name>

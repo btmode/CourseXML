@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("CourseXML")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+72a3135fd7bbf2b7bedeb07c43b3d89eece4c3ce")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f3a94bbd6365cb8a00a1581d48a9240709c72384")]
 [assembly: System.Reflection.AssemblyProductAttribute("CourseXML")]
 [assembly: System.Reflection.AssemblyTitleAttribute("CourseXML")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

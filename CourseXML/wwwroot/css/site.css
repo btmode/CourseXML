@@ -1,178 +1,194 @@
 :root {
-  --primary-color: #3498db;
-  --text-color: #2c3e50;
-  --bg-color: rgba(255, 255, 255, 0.95);
-  --border-color: rgba(0, 0, 0, 0.1);
-  --font-bold: 600;
+  --primary-green: #2ecc71;
+  --dark-green: #27ae60;
+  --light-green: #d5f5e3;
+  --white: #ffffff;
+  --light-gray: #f8f9fa;
+  --dark-text: #2c3e50;
+  --shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  font-family: 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
-  color: var(--text-color);
-  margin: 0;
-  padding: 20px;
-}
-
-
-/* Основные стили таблицы с фиксированными колонками */
-.currency-table {
-  width: 100%;
-  max-width: 800px;
-  margin: 80px auto;
-  border-collapse: collapse;
-  background: white;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-  table-layout: fixed; /* Фиксированная ширина колонок */
-}
-
-.currency-table thead {
-  background-color: var(--primary-color);
-  color: white;
-}
-
-.currency-table th {
-  padding: 20px;
-  text-align: center;
-  font-weight: 700;
-  font-size: 30px;
-}
-
-/* Фиксированные ширины колонок */
-.currency-table th:nth-child(1) { width: 280px; text-align: center;} /* Валюта */
-.currency-table th:nth-child(2) { width: 300px; text-align: center;} /* Покупка */
-.currency-table th:nth-child(3) { width: 300px; text-align: center;} /* Продажа */
-
-.currency-table td {
-  padding: 20px;
-  text-align: center;
-  border-bottom: 1px solid #f0f0f0;
-  vertical-align: middle;
-  font-size: 35px;
-}
-
-/* Стили для строк с валютами */
-.currency-name {
+  background: linear-gradient(90deg,rgba(199, 255, 191, 1) 0%, rgba(47, 158, 92, 1) 50%, rgba(199, 255, 191, 1) 100%);
+  font-family: 'Segoe UI', 'Roboto', sans-serif;
+  color: var(--dark-text);
+  padding: 40px;
+  min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 30px;
-  justify-content: flex-start;
-  padding-left: 20px; /* Добавляем отступ слева */
 }
 
-/* Стили для флагов */
-.flag-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 4px;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  display: inline-block;
-  flex-shrink: 0; /* Запрещаем сжатие */
+.container {
+  width: 100%;
+  max-width: 1400px;
+  background: var(--white);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  padding: 30px;
 }
 
-/* Ваши оригинальные флаги */
-.flag-icon.flag-usd { background-image: url('/images/USD.png'); }
-.flag-icon.flag-eur { background-image: url('/images/EUR.png'); }
-.flag-icon.flag-gbp { background-image: url('/images/GBP.png'); }
-.flag-icon.flag-cny { background-image: url('/images/CNY.png'); }
-
-/* Стили для значений курсов */
-.purchase, .sale {
-  font-family: 'Roboto Mono', monospace;
-  font-size: 35px;
-  font-weight: 600;
-  display: inline-block;
-  width: 100%; /* Занимаем всю ширину ячейки */
-  text-align: center;
-  padding: 0 10px;
-  box-sizing: border-box;
-}
-
-/* Адаптивность */
-@media (max-width: 768px) {
-  .currency-table {
-    table-layout: fixed;
-  }
-
-  .currency-table th,
-  .currency-table td {
-    padding: 15px 10px;
-    font-size: 24px;
-    text-align: center;
-  }
-
-  .currency-name {
-    gap: 15px;
-    padding-left: 10px;
-  }
-
-  .flag-icon {
-    width: 30px;
-    height: 30px;
-  }
-
-  .purchase, .sale {
-    font-size: 24px;
-  }
-}
-
-/* Остальные стили остаются без изменений */
-.currency-header {
-  max-width: 900px;
-  margin: 0 auto 25px;
+.header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 15px;
+  margin-bottom: 40px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid var(--light-green);
 }
 
-.datetime-info {
-  text-align: right;
-  font-size: 15px;
-  color: #5a6268;
-  font-weight: var(--font-bold);
-}
-
-#currentDateTime, #lastUpdate {
+.title {
+  font-size: 62px;
   font-weight: 700;
+  color: var(--dark-green);
 }
 
-/* Анимации */
-@keyframes highlight {
-  0% { background-color: rgba(52, 152, 219, 0.15); }
-  100% { background-color: transparent; }
+.office-info {
+  font-size: 62px;
+  color: var(--dark-text);
+  font-weight: bold;
 }
 
-.updating {
-  animation: highlight 1.5s ease-out;
+.datetime {
+  font-size: 62px;
+  font-weight: bold;
+  text-align: right;
+}
+
+.datetime div {
+  font-size: 24px;
+  margin-bottom: 10px;
+}
+
+.datetime span {
+  font-weight: bold;
+  color: var(--dark-green);
+}
+
+.currency-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 15px;
+}
+
+.currency-table thead th {
+  background-color: var(--primary-green);
+  color: var(--white);
+  font-size: 60px;
+  font-weight: bold;
+  padding: 25px;
+  text-align: center;
+}
+
+.currency-table th:first-child {
+  border-radius: 15px 0 0 15px;
+}
+
+.currency-table th:last-child {
+  border-radius: 0 15px 15px 0;
+}
+
+.currency-table tbody tr {
+  background-color: var(--white);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+  transition: all 0.3s ease;
+}
+
+.currency-table tbody tr:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+}
+
+.currency-table td {
+  padding: 30px;
+  font-size: 60px;
+  text-align: center;
+  vertical-align: middle;
+  border: none;
+}
+
+.currency-name {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 20px;
+}
+
+.flag {
+  width: 60px;
+  height: 40px;
+  border-radius: 5px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.currency-code {
+  font-weight: bold;
+}
+
+.rate-value {
+  font-weight: bold;
+  font-family: 'Segoe UI', 'Roboto', sans-serif;
+}
+
+.up {
+  color: var(--primary-green);
+}
+
+.down {
+  color: #e74c3c;
 }
 
 .notification {
   position: fixed;
-  bottom: 25px;
-  right: 25px;
-  padding: 16px 24px;
-  background-color: var(--primary-color);
+  bottom: 40px;
+  right: 40px;
+  background-color: var(--primary-green);
   color: white;
-  border-radius: 10px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  padding: 20px 30px;
+  border-radius: 15px;
+  font-size: 60px;
+  font-weight: bold;
+  box-shadow: var(--shadow);
   z-index: 1000;
-  font-weight: 700;
-  font-size: 15px;
-  animation: fadeIn 0.3s;
+  animation: slideIn 0.5s ease-out;
 }
 
-.increase {
-  color: #28a745;
-  background-color: rgba(40, 167, 69, 0.1);
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 
-.decrease {
-  color: #dc3545;
-  background-color: rgba(220, 53, 69, 0.1);
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.updating {
+  animation: pulse 1s infinite;
+}
+
+/* Адаптация для меньших экранов */
+@media (max-width: 1600px) {
+  .title { font-size: 36px; }
+  .office-info { font-size: 24px; }
+  .datetime div { font-size: 20px; }
+  .currency-table thead th { font-size: 28px; }
+  .currency-table td { font-size: 32px; padding: 25px; }
+  .flag { width: 50px; height: 35px; }
+}
+
+@media (max-width: 1200px) {
+  body { padding: 30px; }
+  .container { padding: 20px; }
+  .currency-table td { font-size: 28px; padding: 20px; }
 }

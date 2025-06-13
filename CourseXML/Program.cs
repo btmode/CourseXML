@@ -1,17 +1,16 @@
-using Microsoft.AspNetCore.SignalR;
-
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSignalR().AddJsonProtocol(options => {
-    options.PayloadSerializerOptions.PropertyNamingPolicy = null;
-});
 
-builder.Services.AddControllersWithViews();
-builder.Services.AddSignalR(options => {
+builder.Services.AddSignalR(options =>
+{
     options.EnableDetailedErrors = true;
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
     options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+}).AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.PropertyNamingPolicy = null;
 });
+builder.Services.AddControllersWithViews();
 builder.Services.AddSingleton<CurrencyService>();
 builder.Services.AddCors(options =>
 {
@@ -31,12 +30,12 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
     
 }
+
 app.UseHttpsRedirection();
 app.UseStaticFiles(); 
 app.UseRouting();
 app.UseAuthorization();
 
-app.UseCors("AllowAll");
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Course}/{action=Index}/{id?}");

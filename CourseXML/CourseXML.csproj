@@ -10,4 +10,8 @@
       <Folder Include="Data\archive\" />
     </ItemGroup>
 
+    <ItemGroup>
+      <PackageReference Include="SSH.NET" Version="2025.0.0" />
+    </ItemGroup>
+
 </Project>
