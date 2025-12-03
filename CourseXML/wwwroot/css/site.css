@@ -65,80 +65,300 @@ body {
     pointer-events: none;
 }
 
-/* ШАПКА - ВЕРТИКАЛЬНОЕ УВЕЛИЧЕНИЕ */
+/* СТИЛЬНАЯ ШАПКА */
 .header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: calc(-30px * var(--scale-factor));
-    padding-bottom: calc(20px * var(--scale-factor));
-    border-bottom: calc(3px * var(--scale-factor)) solid var(--light-green);
+    align-items: flex-start;
+    margin-bottom: calc(30px * var(--scale-factor));
+    padding: calc(30px * var(--scale-factor));
+    background: linear-gradient(135deg, #ffffff 0%, var(--light-green) 100%);
+    border-radius: calc(25px * var(--scale-factor));
+    box-shadow: var(--shadow);
+    border: calc(3px * var(--scale-factor)) solid var(--primary-green);
     position: relative;
-    z-index: 1;
-    min-height: var(--header-height);
+    overflow: hidden;
 }
 
-.title {
-    font-size: calc(80px * var(--scale-factor)) !important;
-    font-weight: 800 !important;
+    .header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: calc(8px * var(--scale-factor));
+        background: linear-gradient(90deg, var(--primary-green), var(--dark-green), var(--primary-green));
+    }
+
+.header-left {
+    display: flex;
+    flex-direction: column;
+    gap: calc(20px * var(--scale-factor));
+    flex: 1;
+}
+
+.bank-name {
+    font-size: calc(90px * var(--scale-factor)) !important;
+    font-weight: 900 !important;
     color: var(--dark-green);
+    letter-spacing: calc(2px * var(--scale-factor));
     text-transform: uppercase;
-    letter-spacing: 1px;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-    line-height: 1.1;
+    line-height: 1;
 }
 
-.office-info {
-    font-size: calc(70px * var(--scale-factor)) !important;
-    color: var(--dark-text);
-    font-weight: 700 !important;
-    margin-top: calc(15px * var(--scale-factor));
-    background: linear-gradient(135deg, var(--light-green) 0%, #ffffff 100%);
+.office-info-card {
+    display: flex;
+    align-items: center;
+    gap: calc(20px * var(--scale-factor));
+    background: var(--white);
     padding: calc(20px * var(--scale-factor)) calc(30px * var(--scale-factor));
     border-radius: calc(25px * var(--scale-factor));
-    display: inline-block;
     box-shadow: var(--shadow);
+    border-left: calc(0px * var(--scale-factor)) solid var(--primary-green);
+    max-width: fit-content;
+}
+
+.office-icon {
+    font-size: calc(60px * var(--scale-factor)) !important;
+}
+
+.office-text {
+    font-size: calc(55px * var(--scale-factor)) !important;
+    font-weight: 700 !important;
+    color: var(--dark-text);
     line-height: 1.2;
 }
 
-/* БЛОК ВРЕМЕНИ */
-.datetime {
-    font-size: calc(48px * var(--scale-factor));
-    font-weight: bold;
-    text-align: right;
-    background: linear-gradient(135deg, var(--light-green) 0%, #ffffff 100%);
-    padding: calc(25px * var(--scale-factor)) calc(35px * var(--scale-factor));
-    border-radius: calc(25px * var(--scale-factor));
-    box-shadow: var(--shadow);
-    min-width: calc(600px * var(--scale-factor));
+.header-right {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
 }
 
-    .datetime div {
-        font-size: calc(28px * var(--scale-factor)) !important;
-        margin-bottom: calc(15px * var(--scale-factor));
-        color: var(--dark-text);
-        font-weight: 600;
-        line-height: 1.2;
+.time-cards {
+    display: flex;
+    flex-direction: column;
+    gap: calc(20px * var(--scale-factor));
+    min-width: calc(800px * var(--scale-factor));
+}
+
+.time-card {
+    background: var(--white);
+    padding: calc(25px * var(--scale-factor)) calc(35px * var(--scale-factor));
+    border-radius: calc(20px * var(--scale-factor));
+    box-shadow: var(--shadow);
+    border: calc(2px * var(--scale-factor)) solid var(--light-green);
+    transition: var(--transition);
+}
+
+    .time-card:hover {
+        transform: translateY(calc(-5px * var(--scale-factor)));
+        border-color: var(--primary-green);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
     }
 
-    .datetime span {
-        font-weight: 1000 !important;
-        color: var(--dark-green);
-        font-size: calc(48px * var(--scale-factor)) !important;
-        display: inline-block;
-        margin-left: calc(10px * var(--scale-factor));
+.time-label {
+    display: flex;
+    align-items: center;
+    gap: calc(15px * var(--scale-factor));
+    font-size: calc(40px * var(--scale-factor)) !important;
+    font-weight: 600 !important;
+    color: var(--dark-text);
+    margin-bottom: calc(15px * var(--scale-factor));
+    opacity: 0.9;
+}
+
+.time-icon {
+    font-size: calc(45px * var(--scale-factor)) !important;
+}
+
+.time-value {
+    font-size: calc(65px * var(--scale-factor)) !important;
+    font-weight: 800 !important;
+    color: var(--dark-green);
+    background: linear-gradient(135deg, var(--light-green) 0%, #ffffff 100%);
+    padding: calc(20px * var(--scale-factor)) calc(30px * var(--scale-factor));
+    border-radius: calc(15px * var(--scale-factor));
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: calc(1px * var(--scale-factor));
+    border: calc(2px * var(--scale-factor)) solid transparent;
+    transition: var(--transition);
+}
+
+.time-card:hover .time-value {
+    border-color: var(--primary-green);
+    background: linear-gradient(135deg, #ffffff 0%, var(--light-green) 100%);
+}
+
+/* ЗАГОЛОВОК ТАБЛИЦЫ */
+.table-header {
+    text-align: center;
+    margin: calc(40px * var(--scale-factor)) 0;
+    padding: calc(30px * var(--scale-factor));
+    background: linear-gradient(135deg, var(--primary-green) 0%, var(--dark-green) 100%);
+    border-radius: calc(25px * var(--scale-factor));
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+}
+
+    .table-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: calc(6px * var(--scale-factor));
         background: var(--white);
-        padding: calc(8px * var(--scale-factor)) calc(15px * var(--scale-factor));
-        border-radius: calc(12px * var(--scale-factor));
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
-        line-height: 1.2;
+        opacity: 0.3;
     }
 
+.main-title {
+    font-size: calc(70px * var(--scale-factor)) !important;
+    font-weight: 900 !important;
+    color: var(--white);
+    text-transform: uppercase;
+    letter-spacing: calc(3px * var(--scale-factor));
+    text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+    margin: 0;
+    position: relative;
+    z-index: 1;
+}
+
+/* ДОПОЛНИТЕЛЬНЫЕ ЭФФЕКТЫ ДЛЯ ШАПКИ */
+.header-left::after {
+    content: '';
+    position: absolute;
+    bottom: calc(-10px * var(--scale-factor));
+    right: calc(-10px * var(--scale-factor));
+    width: calc(200px * var(--scale-factor));
+    height: calc(200px * var(--scale-factor));
+    background: radial-gradient(circle, rgba(46, 204, 113, 0.1) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* АНИМАЦИЯ ПРИ ОБНОВЛЕНИИ ВРЕМЕНИ */
+.time-value.updating {
+    animation: timeUpdate 1s ease;
+    position: relative;
+}
+
+@keyframes timeUpdate {
+    0% {
+        transform: scale(1);
+        color: var(--dark-green);
+    }
+
+    50% {
+        transform: scale(1.05);
+        color: #ffffff;
+        background: linear-gradient(135deg, var(--primary-green) 0%, var(--dark-green) 100%);
+        box-shadow: 0 0 30px rgba(46, 204, 113, 0.5);
+    }
+
+    100% {
+        transform: scale(1);
+        color: var(--dark-green);
+    }
+}
+
+/* ИНДИКАТОР ОНЛАЙН-СТАТУСА */
+.online-status {
+    position: absolute;
+    top: calc(20px * var(--scale-factor));
+    right: calc(20px * var(--scale-factor));
+    display: flex;
+    align-items: center;
+    gap: calc(10px * var(--scale-factor));
+    background: var(--white);
+    padding: calc(10px * var(--scale-factor)) calc(20px * var(--scale-factor));
+    border-radius: calc(50px * var(--scale-factor));
+    box-shadow: var(--shadow);
+    font-size: calc(25px * var(--scale-factor)) !important;
+    font-weight: 600;
+    z-index: 10;
+}
+
+.status-dot {
+    width: calc(20px * var(--scale-factor));
+    height: calc(20px * var(--scale-factor));
+    border-radius: 50%;
+    background-color: var(--primary-green);
+    animation: pulse 2s infinite;
+}
+
+    .status-dot.offline {
+        background-color: #e74c3c;
+        animation: none;
+    }
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7);
+    }
+
+    70% {
+        box-shadow: 0 0 0 calc(15px * var(--scale-factor)) rgba(46, 204, 113, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(46, 204, 113, 0);
+    }
+}
+
+/* АДАПТАЦИЯ ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ */
+@media (max-width: 1600px) {
+    .header {
+        flex-direction: column;
+        gap: calc(30px * var(--scale-factor));
+    }
+
+    .header-right {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    .time-cards {
+        width: 100%;
+        min-width: auto;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .time-card {
+        flex: 1;
+        min-width: calc(400px * var(--scale-factor));
+    }
+}
+
+@media (max-width: 1200px) {
+    .time-cards {
+        flex-direction: column;
+    }
+
+    .time-card {
+        min-width: 100%;
+    }
+}
+
+/* ОБНОВЛЕННЫЙ ФОН ДЛЯ ТАБЛИЦЫ (чтобы гармонировало с шапкой) */
+.currency-table thead th {
+    background: linear-gradient(135deg, var(--dark-green) 0%, #1e8449 100%);
+}
+
+.currency-table tbody tr:hover {
+    background: linear-gradient(135deg, #ffffff 0%, var(--light-green) 100%);
+    border-color: var(--primary-green);
+}
 /* ТАБЛИЦА - ГЛАВНОЕ ИЗМЕНЕНИЕ ДЛЯ ВЕРТИКАЛЬНОГО РОСТА */
 .currency-table {
     width: 100%;
+    margin-bottom: 10px;
     border-collapse: separate;
-    border-spacing: 0 calc(100px * var(--scale-factor));
+    border-spacing: 0 calc(10px * var(--scale-factor));
     position: relative;
     z-index: 1;
 }
@@ -146,26 +366,26 @@ body {
     .currency-table thead th {
         background: linear-gradient(135deg, var(--primary-green) 0%, var(--dark-green) 100%);
         color: var(--white);
-        font-size: calc(55px * var(--scale-factor)) !important;
-        font-weight: 800 !important;
-        padding: calc(25px * var(--scale-factor)) calc(20px * var(--scale-factor));
+        font-size: calc(60px * var(--scale-factor)) !important;
+        font-weight: 1000 !important;
+        padding: calc(30px * var(--scale-factor)) calc(50px * var(--scale-factor));
         text-align: center;
         text-transform: uppercase;
         letter-spacing: 1px;
         border: none;
         position: relative;
         overflow: hidden;
-        height: calc(80px * var(--scale-factor));
+        height: calc(50px * var(--scale-factor));
     }
 
     .currency-table th:first-child {
         border-radius: calc(25px * var(--scale-factor)) 0 0 calc(25px * var(--scale-factor));
-        padding-left: calc(110px * var(--scale-factor));
-        text-align: left;
+        padding-left: calc(60px * var(--scale-factor));
+        text-align: center;
     }
 
     .currency-table th:last-child {
-        border-radius: 0 calc(25px * var(--scale-factor)) calc(25px * var(--scale-factor)) 0;
+        border-radius: 0 calc(25px * var(--scale-factor)) calc(35px * var(--scale-factor)) 0;
     }
 
     /* СТРОКИ ТАБЛИЦЫ - УВЕЛИЧИВАЕМ ВЫСОТУ */
@@ -173,25 +393,25 @@ body {
         background-color: var(--white);
         box-shadow: var(--shadow);
         transition: var(--transition);
-        border-radius: calc(25px * var(--scale-factor));
+        border-radius: calc(15px * var(--scale-factor));
         height: var(--row-height);
         min-height: var(--row-height);
     }
 
     .currency-table td {
-        padding: calc(100px * var(--scale-factor)) calc(20px * var(--scale-factor));
-        font-size: calc(40px * var(--scale-factor)) !important;
+        padding: calc(80px * var(--scale-factor)) calc(20px * var(--scale-factor));
+        font-size: calc(100px * var(--scale-factor)) !important;
         text-align: center;
         vertical-align: middle;
         border: none;
-        font-weight: 600;
+        font-weight: 800;
         height: var(--row-height);
     }
 
         /* ПЕРВАЯ ЯЧЕЙКА - ВАЛЮТА */
         .currency-table td:first-child {
-            padding-left: calc(30px * var(--scale-factor));
-            border-radius: calc(30px * var(--scale-factor)) 0 0 calc(25px * var(--scale-factor));
+            padding-left: calc(70px * var(--scale-factor));
+            border-radius: calc(25px * var(--scale-factor)) 0 0 calc(25px * var(--scale-factor));
             text-align: center;
         }
 
@@ -204,7 +424,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: calc(80px * var(--scale-factor));
+    gap: calc(20px * var(--scale-factor));
     height: 100%;
 }
 
