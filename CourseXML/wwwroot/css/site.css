@@ -1,0 +1,194 @@
+:root {
+  --primary-green: #2ecc71;
+  --dark-green: #27ae60;
+  --light-green: #d5f5e3;
+  --white: #ffffff;
+  --light-gray: #f8f9fa;
+  --dark-text: #2c3e50;
+  --shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: linear-gradient(90deg,rgba(199, 255, 191, 1) 0%, rgba(47, 158, 92, 1) 50%, rgba(199, 255, 191, 1) 100%);
+  font-family: 'Segoe UI', 'Roboto', sans-serif;
+  color: var(--dark-text);
+  padding: 40px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.container {
+  width: 100%;
+  max-width: 1400px;
+  background: var(--white);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  padding: 30px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid var(--light-green);
+}
+
+.title {
+  font-size: 62px;
+  font-weight: 700;
+  color: var(--dark-green);
+}
+
+.office-info {
+  font-size: 62px;
+  color: var(--dark-text);
+  font-weight: bold;
+}
+
+.datetime {
+  font-size: 62px;
+  font-weight: bold;
+  text-align: right;
+}
+
+.datetime div {
+  font-size: 24px;
+  margin-bottom: 10px;
+}
+
+.datetime span {
+  font-weight: bold;
+  color: var(--dark-green);
+}
+
+.currency-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 15px;
+}
+
+.currency-table thead th {
+  background-color: var(--primary-green);
+  color: var(--white);
+  font-size: 60px;
+  font-weight: bold;
+  padding: 25px;
+  text-align: center;
+}
+
+.currency-table th:first-child {
+  border-radius: 15px 0 0 15px;
+}
+
+.currency-table th:last-child {
+  border-radius: 0 15px 15px 0;
+}
+
+.currency-table tbody tr {
+  background-color: var(--white);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+  transition: all 0.3s ease;
+}
+
+.currency-table tbody tr:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+}
+
+.currency-table td {
+  padding: 30px;
+  font-size: 60px;
+  text-align: center;
+  vertical-align: middle;
+  border: none;
+}
+
+.currency-name {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 20px;
+}
+
+.flag {
+  width: 60px;
+  height: 40px;
+  border-radius: 5px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.currency-code {
+  font-weight: bold;
+}
+
+.rate-value {
+  font-weight: bold;
+  font-family: 'Segoe UI', 'Roboto', sans-serif;
+}
+
+.up {
+  color: var(--primary-green);
+}
+
+.down {
+  color: #e74c3c;
+}
+
+.notification {
+  position: fixed;
+  bottom: 40px;
+  right: 40px;
+  background-color: var(--primary-green);
+  color: white;
+  padding: 20px 30px;
+  border-radius: 15px;
+  font-size: 60px;
+  font-weight: bold;
+  box-shadow: var(--shadow);
+  z-index: 1000;
+  animation: slideIn 0.5s ease-out;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.updating {
+  animation: pulse 1s infinite;
+}
+
+/* Адаптация для меньших экранов */
+@media (max-width: 1600px) {
+  .title { font-size: 36px; }
+  .office-info { font-size: 24px; }
+  .datetime div { font-size: 20px; }
+  .currency-table thead th { font-size: 28px; }
+  .currency-table td { font-size: 32px; padding: 25px; }
+  .flag { width: 50px; height: 35px; }
+}
+
+@media (max-width: 1200px) {
+  body { padding: 30px; }
+  .container { padding: 20px; }
+  .currency-table td { font-size: 28px; padding: 20px; }
+}

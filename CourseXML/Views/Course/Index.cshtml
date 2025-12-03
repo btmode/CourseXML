@@ -1,0 +1,340 @@
+﻿@model CityOffice
+
+<div class="header">
+    <div>
+        <h1 class="title">Курсы валют</h1>
+        <div class="office-info">Тольятти</div>
+    </div>
+    <div class="datetime">
+        <div><strong>Текущее время:</strong> <strong><span id="currentDateTime">@DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")</span></strong></div>
+        <div><strong>Обновлено:</strong> <strong><span id="lastUpdate">@DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")</span></strong></div>
+    </div>
+</div>
+
+<table class="currency-table">
+    <thead>
+    <tr>
+        <th>Валюта</th>
+        <th>Покупка</th>
+        <th>Продажа</th>
+    </tr>
+    </thead>
+    <tbody>
+    @foreach (var currency in Model.Currencies)
+    {
+        <tr data-currency="@currency.Name">
+            <td>
+                <div class="currency-name">
+                    <div class="flag" style="background-image: url('/images/@(currency.Name).png')"></div>
+                    <span class="currency-code">@currency.Name</span>
+                </div>
+            </td>
+            <td>
+                <div class="rate-value purchase">@currency.Purchase.ToString("N2")</div>
+            </td>
+            <td>
+                <div class="rate-value sale">@currency.Sale.ToString("N2")</div>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script>
+        // ============================================
+        // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И НАСТРОЙКИ
+        // ============================================
+        const config = {
+            officeId: '@Model.Id',
+            reconnectDelay: 5000,
+            maxReconnectAttempts: 10,
+            updateCheckInterval: 10000
+        };
+
+        let connection = null;
+        let reconnectCount = 0;
+        let connectionStatus = 'disconnected';
+
+        // ============================================
+        // ИНИЦИАЛИЗАЦИЯ И УТИЛИТЫ
+        // ============================================
+
+        function initApp() {
+            updateDateTime(); // Запускаем часы
+            startConnection(); // Запускаем SignalR
+            initUI(); // Инициализируем UI
+        }
+
+        function initUI() {
+            // Восстанавливаем прозрачность таблицы
+            const savedOpacity = localStorage.getItem('tableOpacity');
+            if (savedOpacity) {
+                setTableOpacity(parseFloat(savedOpacity));
+            }
+        }
+
+        // ============================================
+        // РЕАЛЬНОЕ ВРЕМЯ (ЧАСЫ)
+        // ============================================
+
+        function updateDateTime() {
+            const now = new Date();
+            const formattedTime = formatDateTime(now);
+            document.getElementById('currentDateTime').textContent = formattedTime;
+            
+            // Рекурсивный вызов для обновления каждую секунду
+            setTimeout(updateDateTime, 1000);
+        }
+
+        function formatDateTime(date) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            
+            return `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
+        }
+
+        // ============================================
+        // SIGNALR ПОДКЛЮЧЕНИЕ
+        // ============================================
+
+        function createConnection() {
+            return new signalR.HubConnectionBuilder()
+                .withUrl("/currencyHub")
+                .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
+                .configureLogging(signalR.LogLevel.Warning)
+                .build();
+        }
+
+        async function startConnection() {
+            try {
+                if (connection && connection.state === signalR.HubConnectionState.Connected) {
+                    return;
+                }
+
+                connection = createConnection();
+                setupConnectionHandlers();
+                
+                await connection.start();
+                connectionStatus = 'connected';
+                reconnectCount = 0;
+                
+                console.log('✓ SignalR подключен');
+                await joinOfficeGroup();
+                showNotification('Подключено к серверу обновлений');
+                
+            } catch (err) {
+                console.error('✗ Ошибка подключения:', err);
+                handleConnectionError();
+            }
+        }
+
+        function setupConnectionHandlers() {
+            // Обработчик обновлений курсов
+            connection.on("ReceiveUpdate", handleRateUpdate);
+            
+            // Обработчики состояния подключения
+            connection.onreconnecting(() => {
+                connectionStatus = 'reconnecting';
+                console.log('↻ Переподключение...');
+                showNotification('Переподключение...');
+            });
+            
+            connection.onreconnected(() => {
+                connectionStatus = 'connected';
+                console.log('✓ Переподключение успешно');
+                showNotification('Подключение восстановлено');
+                joinOfficeGroup();
+            });
+            
+            connection.onclose(() => {
+                connectionStatus = 'disconnected';
+                console.log('✗ Соединение закрыто');
+                setTimeout(startConnection, config.reconnectDelay);
+            });
+        }
+
+        async function joinOfficeGroup() {
+            if (connection && connection.state === signalR.HubConnectionState.Connected) {
+                try {
+                    await connection.invoke("JoinGroup", config.officeId);
+                    console.log(`✓ Присоединились к группе: ${config.officeId}`);
+                } catch (err) {
+                    console.error('Ошибка присоединения к группе:', err);
+                }
+            }
+        }
+
+        function handleConnectionError() {
+            reconnectCount++;
+            
+            if (reconnectCount <= config.maxReconnectAttempts) {
+                const delay = Math.min(1000 * Math.pow(2, reconnectCount), 30000);
+                console.log(`Повторная попытка через ${delay/1000}с (${reconnectCount}/${config.maxReconnectAttempts})`);
+                setTimeout(startConnection, delay);
+            } else {
+                showNotification('Соединение разорвано. Обновите страницу.', 'error');
+            }
+        }
+
+        // ============================================
+        // ОБРАБОТКА ОБНОВЛЕНИЙ КУРСОВ
+        // ============================================
+
+        function handleRateUpdate(officeData) {
+            if (!validateUpdateData(officeData)) {
+                console.error('Некорректные данные обновления:', officeData);
+                return;
+            }
+            
+            console.log('Получены обновления для:', officeData.Id);
+            
+            // Обновляем время последнего обновления
+            document.getElementById('lastUpdate').textContent = officeData.UpdateTime;
+            
+            // Обновляем курсы валют
+            updateCurrencyRates(officeData.Currencies);
+            
+            // Показываем уведомление
+            showNotification('Курсы обновлены', 'success');
+        }
+
+        function validateUpdateData(data) {
+            return data && 
+                   data.Currencies && 
+                   Array.isArray(data.Currencies) && 
+                   data.Currencies.length > 0;
+        }
+
+        function updateCurrencyRates(currencies) {
+            currencies.forEach(currency => {
+                const row = document.querySelector(`tr[data-currency="${currency.Name}"]`);
+                if (row) {
+                    updateRateCell(row.querySelector('.purchase'), currency.Purchase);
+                    updateRateCell(row.querySelector('.sale'), currency.Sale);
+                }
+            });
+        }
+
+        function updateRateCell(element, newValue) {
+            if (!element) return;
+            
+            const oldValue = parseFloat(element.textContent.replace(',', '.'));
+            const numericNewValue = parseFloat(newValue);
+            
+            if (isNaN(oldValue) || isNaN(numericNewValue) || oldValue === numericNewValue) {
+                return;
+            }
+            
+            animateValueChange(element, oldValue, numericNewValue);
+        }
+
+        // ============================================
+        // АНИМАЦИИ И ВИЗУАЛЬНЫЕ ЭФФЕКТЫ
+        // ============================================
+
+        function animateValueChange(element, oldValue, newValue) {
+            const duration = 500;
+            const startTime = performance.now();
+            
+            function update(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = easeInOutCubic(progress);
+                
+                const currentValue = oldValue + (newValue - oldValue) * easeProgress;
+                element.textContent = formatNumber(currentValue);
+                
+                // Визуальный эффект изменения
+                if (progress < 1) {
+                    const color = newValue > oldValue ? '#4CAF50' : '#F44336';
+                    element.style.color = color;
+                    element.style.fontWeight = 'bold';
+                    element.classList.add('updating');
+                    requestAnimationFrame(update);
+                } else {
+                    setTimeout(() => {
+                        element.style.color = '';
+                        element.style.fontWeight = '';
+                        element.classList.remove('updating');
+                    }, 1000);
+                }
+            }
+            
+            requestAnimationFrame(update);
+        }
+
+        function easeInOutCubic(t) {
+            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+
+        function formatNumber(value) {
+            return value.toFixed(2).replace('.', ',');
+        }
+
+        // ============================================
+        // УВЕДОМЛЕНИЯ И UI
+        // ============================================
+
+        function showNotification(message, type = 'info') {
+            const notification = createNotification(message, type);
+            document.body.appendChild(notification);
+            
+            // Автоматическое скрытие
+            setTimeout(() => {
+                notification.classList.add('fade-out');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        function createNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            
+            const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ️';
+            notification.innerHTML = `
+                <span class="notification-icon">${icon}</span>
+                <span class="notification-text">${message}</span>
+            `;
+            
+            return notification;
+        }
+
+        function setTableOpacity(opacity) {
+            document.documentElement.style.setProperty('--table-opacity', opacity);
+            localStorage.setItem('tableOpacity', opacity);
+        }
+
+        // ============================================
+        // СТАРТ ПРИЛОЖЕНИЯ
+        // ============================================
+
+        // Запускаем при загрузке DOM
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
+        }
+    </script>
+}
+
+@functions {
+
+    string GetCurrencyName(string code)
+    {
+        return code switch
+        {
+            "USD" => "USD",
+            "EUR" => "EUR",
+            "CNY" => "CNY",
+            "GBP" => "GBP",
+            _ => code
+        };
+    }
+
+}
