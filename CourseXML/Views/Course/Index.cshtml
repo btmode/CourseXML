@@ -1,44 +1,49 @@
 ﻿@model CityOffice
 
-<div class="header">
-    <div>
-        <h1 class="title">Курсы валют</h1>
-        <div class="office-info">Тольятти</div>
-    </div>
-    <div class="datetime">
-        <div><strong>Текущее время:</strong> <strong><span id="currentDateTime">@DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")</span></strong></div>
-        <div><strong>Обновлено:</strong> <strong><span id="lastUpdate">@DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")</span></strong></div>
-    </div>
-</div>
+<div class="background-logo"></div>
 
-<table class="currency-table">
-    <thead>
-    <tr>
-        <th>Валюта</th>
-        <th>Покупка</th>
-        <th>Продажа</th>
-    </tr>
-    </thead>
-    <tbody>
-    @foreach (var currency in Model.Currencies)
-    {
-        <tr data-currency="@currency.Name">
-            <td>
-                <div class="currency-name">
-                    <div class="flag" style="background-image: url('/images/@(currency.Name).png')"></div>
-                    <span class="currency-code">@currency.Name</span>
-                </div>
-            </td>
-            <td>
-                <div class="rate-value purchase">@currency.Purchase.ToString("N2")</div>
-            </td>
-            <td>
-                <div class="rate-value sale">@currency.Sale.ToString("N2")</div>
-            </td>
-        </tr>
-    }
-    </tbody>
-</table>
+<div class="container tv-optimized">
+    <!-- Добавили класс tv-optimized -->
+    <div class="header">
+        <div>
+            <h1 class="title">Курсы валют</h1>
+            <div class="office-info">@Model.Location</div>
+        </div>
+        <div class="datetime">
+            <div><strong>Текущее время:</strong> <strong><span id="currentDateTime">@DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")</span></strong></div>
+            <div><strong>Обновлено:</strong> <strong><span id="lastUpdate">@DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")</span></strong></div>
+        </div>
+    </div>
+
+    <table class="currency-table">
+        <thead>
+            <tr>
+                <th>Валюта</th>
+                <th>Покупка</th>
+                <th>Продажа</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var currency in Model.Currencies)
+            {
+                <tr data-currency="@currency.Name">
+                    <td>
+                        <div class="currency-name">
+                            <div class="flag" style="background-image: url('/images/@(currency.Name).png')"></div>
+                            <span class="currency-code">@currency.Name</span>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="rate-value purchase">@currency.Purchase.ToString("N2")</div>
+                    </td>
+                    <td>
+                        <div class="rate-value sale">@currency.Sale.ToString("N2")</div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
 
 @section Scripts {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
@@ -310,6 +315,68 @@
             localStorage.setItem('tableOpacity', opacity);
         }
 
+                // В функции animateValueChange заменяем на более заметную анимацию для ТВ:
+        function animateValueChange(element, oldValue, newValue) {
+            if (!element) return;
+
+            const oldValueNum = parseFloat(element.textContent.replace(',', '.'));
+            const newValueNum = parseFloat(newValue);
+
+            if (isNaN(oldValueNum) || isNaN(newValueNum) || oldValueNum === newValueNum) {
+                return;
+            }
+
+            // Более заметная анимация для ТВ
+            const duration = 800;
+            const startTime = performance.now();
+
+            // Добавляем класс для анимации
+            element.classList.add('value-updated');
+
+            function update(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+
+                // Используем более плавную функцию
+                const easeProgress = easeOutBack(progress);
+
+                const currentValue = oldValueNum + (newValueNum - oldValueNum) * easeProgress;
+                element.textContent = currentValue.toFixed(2).replace('.', ',');
+
+                // Цветовая индикация изменения
+                if (newValueNum > oldValueNum) {
+                    element.style.color = '#2ecc71'; // Зеленый для роста
+                    element.style.textShadow = '0 0 20px rgba(46, 204, 113, 0.7)';
+                } else {
+                    element.style.color = '#e74c3c'; // Красный для снижения
+                    element.style.textShadow = '0 0 20px rgba(231, 76, 60, 0.7)';
+                }
+
+                if (progress < 1) {
+                    element.style.fontWeight = '900';
+                    element.style.transform = `scale(${1 + 0.1 * Math.sin(progress * Math.PI)})`;
+                    requestAnimationFrame(update);
+                } else {
+                    // Возвращаем нормальные стили
+                    setTimeout(() => {
+                        element.style.color = '';
+                        element.style.textShadow = '';
+                        element.style.fontWeight = '';
+                        element.style.transform = '';
+                        element.classList.remove('value-updated');
+                    }, 1500);
+                }
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        // Улучшенная функция анимации
+        function easeOutBack(t) {
+            const c1 = 1.70158;
+            const c3 = c1 + 1;
+            return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+        }
         // ============================================
         // СТАРТ ПРИЛОЖЕНИЯ
         // ============================================
@@ -336,5 +403,6 @@
             _ => code
         };
     }
+
 
 }
