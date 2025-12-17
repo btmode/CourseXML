@@ -20,7 +20,6 @@ public class CourseController : Controller
         if (string.IsNullOrEmpty(office))
             return BadRequest("Укажите город (office=tlt, msk, perm)");
 
-        // Даем время на инициализацию при первом запросе
         await Task.Delay(100);
 
         var officeData = _currencyService.GetOffice(office);
