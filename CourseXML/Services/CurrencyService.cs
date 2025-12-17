@@ -7,185 +7,222 @@ namespace CourseXML_main.CourseXML.Services
 {
     public class CurrencyService
     {
-        private readonly string _xmlFilePath;
+        private readonly string _sourceXmlPath;
+        private readonly string _currentXmlPath;
+        private readonly string _archiveFolder;
+
         private readonly ILogger<CurrencyService> _logger;
         private readonly IHubContext<CurrencyHub> _hubContext;
-        private List<CityOffice> _offices = new();
+
+        private readonly List<CityOffice> _offices = new();
+        private FileSystemWatcher? _fileWatcher;
         private DateTime _lastReadTime = DateTime.MinValue;
-        private FileSystemWatcher _fileWatcher;
 
         public CurrencyService(
-             ILogger<CurrencyService> logger,
-             IHubContext<CurrencyHub> hubContext,
-             IConfiguration configuration)
+            ILogger<CurrencyService> logger,
+            IHubContext<CurrencyHub> hubContext,
+            IConfiguration configuration)
         {
             _logger = logger;
             _hubContext = hubContext;
 
-            _xmlFilePath = configuration["LocalPaths:SourceXmlPath"]
-                ?? "/var/www/coursexml/Data/rates.xml"; 
+            _sourceXmlPath = configuration["LocalPaths:SourceXmlPath"]!;
+            _currentXmlPath = configuration["LocalPaths:CurrentXmlPath"]!;
+            _archiveFolder = configuration["LocalPaths:ArchiveFolder"]!;
 
-            _logger.LogInformation("Используется XML файл: {Path}", _xmlFilePath);
-
-            var directory = Path.GetDirectoryName(_xmlFilePath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-                _logger.LogInformation("Создана директория: {Directory}", directory);
-            }
-
-            // Загружаем начальные данные
+            // Проверяем и создаем папки с правами
+            EnsureDirectories();
+            EnsureCurrentFile();
             LoadData();
 
-            // Настраиваем наблюдение за файлом
+            // ВАЖНО: Запускаем watcher ПОСЛЕ загрузки данных
             SetupFileWatcher();
 
-            _logger.LogInformation("CurrencyService инициализирован. Офисов: {Count}", _offices.Count);
+            _logger.LogInformation(
+                "CurrencyService запущен для Linux. Source: {Source}, Current: {Current}",
+                _sourceXmlPath,
+                _currentXmlPath
+            );
         }
 
-        private void LoadData()
+        // ---------- ИСПРАВЛЕННЫЕ МЕТОДЫ ДЛЯ LINUX ----------
+
+        private void EnsureDirectories()
         {
             try
             {
-                if (!File.Exists(_xmlFilePath))
+                // Создаем директории с правильными правами
+                var currentDir = Path.GetDirectoryName(_currentXmlPath);
+                if (!string.IsNullOrEmpty(currentDir))
                 {
-                    _logger.LogWarning("XML файл не найден: {Path}", _xmlFilePath);
-                    _offices = new List<CityOffice>();
-                    return;
+                    Directory.CreateDirectory(currentDir);
+                    // Даем права на чтение для всех (Linux требует для FileSystemWatcher)
+                    try { new DirectoryInfo(currentDir).Attributes &= ~FileAttributes.ReadOnly; } catch { }
                 }
 
-                var xml = XDocument.Load(_xmlFilePath);
-                _offices = ParseXml(xml);
+                Directory.CreateDirectory(_archiveFolder);
 
-                _logger.LogInformation("Данные загружены. Офисов: {Count}", _offices.Count);
+                // Даем права на запись в архив
+                try { new DirectoryInfo(_archiveFolder).Attributes &= ~FileAttributes.ReadOnly; } catch { }
+
+                _logger.LogInformation("Директории созданы/проверены");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ошибка загрузки данных из XML");
-                _offices = new List<CityOffice>();
+                _logger.LogError(ex, "Ошибка создания директорий");
             }
         }
 
-        private List<CityOffice> ParseXml(XDocument xml)
+        private void EnsureCurrentFile()
         {
-            var offices = new List<CityOffice>();
-
             try
             {
-                var root = xml.Root;
-                if (root == null) return offices;
-
-                foreach (var officeElement in root.Elements("office"))
+                if (!File.Exists(_currentXmlPath) && File.Exists(_sourceXmlPath))
                 {
-                    var id = officeElement.Attribute("id")?.Value;
-                    var location = officeElement.Attribute("location")?.Value;
+                    _logger.LogInformation("Current отсутствует, копируем source → current");
+                    File.Copy(_sourceXmlPath, _currentXmlPath, true);
 
-                    if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(location))
-                        continue;
-
-                    var office = new CityOffice
-                    {
-                        Id = id,
-                        Location = location,
-                        Currencies = new List<CurrencyRate>()
-                    };
-
-                    foreach (var currencyElement in officeElement.Elements("currency"))
-                    {
-                        var name = currencyElement.Element("name")?.Value;
-                        var purchaseStr = currencyElement.Element("purchase")?.Value;
-                        var saleStr = currencyElement.Element("sale")?.Value;
-
-                        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(purchaseStr) || string.IsNullOrEmpty(saleStr))
-                            continue;
-
-                        if (decimal.TryParse(purchaseStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var purchase) &&
-                            decimal.TryParse(saleStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var sale))
-                        {
-                            office.Currencies.Add(new CurrencyRate
-                            {
-                                Name = name,
-                                Purchase = purchase,
-                                Sale = sale
-                            });
-                        }
-                    }
-
-                    if (office.Currencies.Any())
-                    {
-                        offices.Add(office);
-                    }
+                    // Даем права на чтение/запись файлу
+                    try { new FileInfo(_currentXmlPath).Attributes &= ~FileAttributes.ReadOnly; } catch { }
+                }
+                else if (!File.Exists(_currentXmlPath))
+                {
+                    // Создаем пустой файл если source тоже нет
+                    File.WriteAllText(_currentXmlPath, @"<?xml version=""1.0"" encoding=""utf-8""?><exchangeRates></exchangeRates>");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ошибка парсинга XML!");
+                _logger.LogError(ex, "Ошибка создания current файла");
             }
-
-            return offices;
         }
 
         private void SetupFileWatcher()
         {
             try
             {
-                var directory = Path.GetDirectoryName(_xmlFilePath);
-                var fileName = Path.GetFileName(_xmlFilePath);
+                var directory = Path.GetDirectoryName(_sourceXmlPath);
+                var fileName = Path.GetFileName(_sourceXmlPath);
 
-                if (string.IsNullOrEmpty(directory))
+                if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
                 {
-                    _logger.LogWarning("Не удалось получить директорию файла");
+                    _logger.LogError("Директория не существует: {Directory}", directory);
                     return;
                 }
 
+                // ВАЖНО ДЛЯ LINUX: Увеличиваем буфер и меняем настройки
                 _fileWatcher = new FileSystemWatcher
                 {
                     Path = directory,
                     Filter = fileName,
-                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
                     EnableRaisingEvents = true,
-                    InternalBufferSize = 65536
+                    InternalBufferSize = 65536 * 8, // Увеличиваем буфер в 8 раз для Linux
+                    IncludeSubdirectories = false
                 };
 
-                _fileWatcher.Changed += async (sender, e) => await OnFileChanged(sender, e);
-                _fileWatcher.Created += async (sender, e) => await OnFileChanged(sender, e);
+                // Обработчики событий
+                _fileWatcher.Changed += OnSourceChangedAsync;
+                _fileWatcher.Created += OnSourceChangedAsync;
+                _fileWatcher.Error += OnFileWatcherError;
 
-                _logger.LogInformation("FileSystemWatcher настроен для файла: {File}", fileName);
+                _logger.LogInformation(
+                    "FileSystemWatcher настроен для Linux. Директория: {Directory}, Файл: {File}",
+                    directory, fileName
+                );
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ошибка настройки FileSystemWatcher");
+                _logger.LogError(ex, "Ошибка настройки FileSystemWatcher для Linux");
             }
         }
 
-        private async Task OnFileChanged(object sender, FileSystemEventArgs e)
+        private void OnFileWatcherError(object sender, ErrorEventArgs e)
+        {
+            _logger.LogError(e.GetException(), "FileSystemWatcher ошибка");
+
+            // Перезапускаем watcher при ошибке
+            try
+            {
+                _fileWatcher?.Dispose();
+                Task.Delay(1000).ContinueWith(_ => SetupFileWatcher());
+            }
+            catch { }
+        }
+
+        private async void OnSourceChangedAsync(object sender, FileSystemEventArgs e)
+        {
+            await ProcessSourceChangeAsync(e);
+        }
+
+        private async Task ProcessSourceChangeAsync(FileSystemEventArgs e)
         {
             try
             {
-                // Дебаунсинг - игнорируем частые события
+                // Дебаунсинг для Linux - увеличиваем время
                 var now = DateTime.Now;
-                if ((now - _lastReadTime).TotalSeconds < 1)
+                if ((now - _lastReadTime).TotalSeconds < 3) // 3 секунды для Linux
                     return;
 
                 _lastReadTime = now;
 
-                // Ждем освобождения файла
-                await Task.Delay(500);
+                _logger.LogInformation("Обнаружено изменение файла: {Name}, тип: {ChangeType}",
+                    e.Name, e.ChangeType);
 
-                _logger.LogInformation("Файл изменен: {File}", e.Name);
+                // Ждем завершения записи - для Linux нужно больше времени
+                await Task.Delay(1000);
 
-                // Сохраняем старые данные для сравнения
-                var oldOffices = new List<CityOffice>(_offices);
+                // ВАЖНО: Проверяем доступность файла
+                if (!IsFileReady(_sourceXmlPath))
+                {
+                    _logger.LogWarning("Файл ещё заблокирован, пропускаем");
+                    return;
+                }
+
+                // Сравниваем содержимое
+                string sourceContent, currentContent;
+
+                try
+                {
+                    // Читаем файлы с retry
+                    sourceContent = await ReadFileWithRetryAsync(_sourceXmlPath);
+                    currentContent = await ReadFileWithRetryAsync(_currentXmlPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Не удалось прочитать файлы, пропускаем");
+                    return;
+                }
+
+                if (sourceContent == currentContent)
+                {
+                    _logger.LogInformation("Изменений в курсах нет");
+                    return;
+                }
+
+                // Архивируем current
+                var archiveName = $"rates_{DateTime.Now:yyyyMMdd_HHmmss}.xml";
+                var archivePath = Path.Combine(_archiveFolder, archiveName);
+
+                if (File.Exists(_currentXmlPath))
+                {
+                    File.Copy(_currentXmlPath, archivePath, true);
+                    _logger.LogInformation("Создана архивная копия: {Archive}", archiveName);
+                }
+
+                // Обновляем current
+                File.Copy(_sourceXmlPath, _currentXmlPath, true);
+
+                // Даем права на новый файл
+                try { new FileInfo(_currentXmlPath).Attributes &= ~FileAttributes.ReadOnly; } catch { }
+
+                _logger.LogInformation("Курсы обновлены");
 
                 // Загружаем новые данные
                 LoadData();
 
-                // Если данные изменились - отправляем обновления
-                if (!AreDataEqual(oldOffices, _offices))
-                {
-                    _logger.LogInformation("Данные обновились, отправка клиентам");
-                    await SendUpdatesToClients();
-                }
+                // Отправляем обновления
+                await SendUpdatesToClients();
             }
             catch (Exception ex)
             {
@@ -193,58 +230,131 @@ namespace CourseXML_main.CourseXML.Services
             }
         }
 
-        private bool AreDataEqual(List<CityOffice> oldData, List<CityOffice> newData)
+        // Вспомогательные методы для Linux
+        private bool IsFileReady(string filePath)
         {
-            if (oldData.Count != newData.Count) return false;
-
-            foreach (var oldOffice in oldData)
+            try
             {
-                var newOffice = newData.FirstOrDefault(o => o.Id == oldOffice.Id);
-                if (newOffice == null) return false;
-
-                if (newOffice.Currencies.Count != oldOffice.Currencies.Count) return false;
-
-                foreach (var oldCurrency in oldOffice.Currencies)
+                using (var stream = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
-                    var newCurrency = newOffice.Currencies.FirstOrDefault(c => c.Name == oldCurrency.Name);
-                    if (newCurrency == null) return false;
-
-                    if (newCurrency.Purchase != oldCurrency.Purchase || newCurrency.Sale != oldCurrency.Sale)
-                        return false;
+                    return true;
                 }
             }
+            catch (IOException)
+            {
+                return false;
+            }
+        }
 
-            return true;
+        private async Task<string> ReadFileWithRetryAsync(string filePath, int maxRetries = 3)
+        {
+            for (int i = 0; i < maxRetries; i++)
+            {
+                try
+                {
+                    return await File.ReadAllTextAsync(filePath);
+                }
+                catch (IOException) when (i < maxRetries - 1)
+                {
+                    await Task.Delay(200 * (i + 1));
+                }
+            }
+            throw new IOException($"Не удалось прочитать файл: {filePath}");
+        }
+
+        // ---------- ОСТАЛЬНЫЕ МЕТОДЫ БЕЗ ИЗМЕНЕНИЙ ----------
+
+        private void LoadData()
+        {
+            try
+            {
+                if (!File.Exists(_currentXmlPath))
+                {
+                    _logger.LogWarning("Current XML не найден");
+                    _offices.Clear();
+                    return;
+                }
+
+                var xml = XDocument.Load(_currentXmlPath);
+                _offices.Clear();
+                _offices.AddRange(ParseXml(xml));
+
+                _logger.LogInformation("Данные загружены. Офисов: {Count}", _offices.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка загрузки current XML");
+                _offices.Clear();
+            }
+        }
+
+        private List<CityOffice> ParseXml(XDocument xml)
+        {
+            var offices = new List<CityOffice>();
+            var root = xml.Root;
+            if (root == null) return offices;
+
+            foreach (var officeElement in root.Elements("office"))
+            {
+                var id = officeElement.Attribute("id")?.Value;
+                var location = officeElement.Attribute("location")?.Value;
+
+                if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(location))
+                    continue;
+
+                var office = new CityOffice
+                {
+                    Id = id,
+                    Location = location,
+                    Currencies = new List<CurrencyRate>()
+                };
+
+                foreach (var currencyElement in officeElement.Elements("currency"))
+                {
+                    var name = currencyElement.Element("name")?.Value;
+                    var purchaseStr = currencyElement.Element("purchase")?.Value;
+                    var saleStr = currencyElement.Element("sale")?.Value;
+
+                    if (string.IsNullOrEmpty(name) ||
+                        string.IsNullOrEmpty(purchaseStr) ||
+                        string.IsNullOrEmpty(saleStr))
+                        continue;
+
+                    if (decimal.TryParse(purchaseStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var purchase) &&
+                        decimal.TryParse(saleStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var sale))
+                    {
+                        office.Currencies.Add(new CurrencyRate
+                        {
+                            Name = name,
+                            Purchase = purchase,
+                            Sale = sale
+                        });
+                    }
+                }
+
+                if (office.Currencies.Any())
+                    offices.Add(office);
+            }
+
+            return offices;
         }
 
         private async Task SendUpdatesToClients()
         {
-            try
+            foreach (var office in _offices)
             {
-                foreach (var office in _offices)
+                var payload = new
                 {
-                    try
-                    {
-                        var officeData = new
-                        {
-                            office.Id,
-                            office.Location,
-                            office.Currencies,
-                            UpdateTime = DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")
-                        };
+                    office.Id,
+                    office.Location,
+                    office.Currencies,
+                    UpdateTime = DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")
+                };
 
-                        await _hubContext.Clients.Group(office.Id.ToLower()).SendAsync("ReceiveUpdate", officeData);
-                        _logger.LogDebug("Обновление отправлено для офиса: {OfficeId}", office.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Ошибка отправки обновления для офиса {OfficeId}", office.Id);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Ошибка отправки обновлений");
+                await _hubContext
+                    .Clients
+                    .Group(office.Id.ToLower())
+                    .SendAsync("ReceiveUpdate", payload);
             }
         }
 
@@ -254,5 +364,19 @@ namespace CourseXML_main.CourseXML.Services
                 o.Id.Equals(officeId, StringComparison.OrdinalIgnoreCase));
         }
 
+        // Дополнительный метод для принудительного обновления
+        public async Task ForceUpdateAsync()
+        {
+            try
+            {
+                _logger.LogInformation("Принудительное обновление курсов");
+                LoadData();
+                await SendUpdatesToClients();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка принудительного обновления");
+            }
+        }
     }
 }

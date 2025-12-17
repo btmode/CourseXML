@@ -1,0 +1,69 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<exchangeRates>
+  <office id="tlt" location="Тольятти">
+    <currency>
+      <name>USD</name>
+      <purchase>90.50</purchase>
+      <sale>93.80</sale>
+    </currency>
+    <currency>
+      <name>EUR</name>
+      <purchase>98.20</purchase>
+      <sale>102.50</sale>
+    </currency>
+    <currency>
+      <name>GBP</name>
+      <purchase>115.30</purchase>
+      <sale>120.10</sale>
+    </currency>
+    <currency>
+      <name>CNY</name>
+      <purchase>12.50</purchase>
+      <sale>13.20</sale>
+    </currency>
+  </office>
+  <office id="perm" location="Пермь">
+    <currency>
+      <name>USD</name>
+      <purchase>91.00</purchase>
+      <sale>94.30</sale>
+    </currency>
+    <currency>
+      <name>EUR</name>
+      <purchase>98.80</purchase>
+      <sale>103.10</sale>
+    </currency>
+    <currency>
+      <name>GBP</name>
+      <purchase>116.00</purchase>
+      <sale>120.80</sale>
+    </currency>
+    <currency>
+      <name>CNY</name>
+      <purchase>12.70</purchase>
+      <sale>13.40</sale>
+    </currency>
+  </office>
+  <office id="msk" location="Москва">
+    <currency>
+      <name>USD</name>
+      <purchase>92.20</purchase>
+      <sale>96.50</sale>
+    </currency>
+    <currency>
+      <name>EUR</name>
+      <purchase>99.00</purchase>
+      <sale>103.30</sale>
+    </currency>
+    <currency>
+      <name>GBP</name>
+      <purchase>116.50</purchase>
+      <sale>121.30</sale>
+    </currency>
+    <currency>
+      <name>CNY</name>
+      <purchase>12.80</purchase>
+      <sale>13.50</sale>
+    </currency>
+  </office>
+</exchangeRates>

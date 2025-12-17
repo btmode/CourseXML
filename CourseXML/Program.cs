@@ -2,64 +2,54 @@ using CourseXML_main.CourseXML.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Читаем порт из переменной окружения или конфига
-var port = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")?.Split(':').LastOrDefault()
-    ?? builder.Configuration["Kestrel:Endpoints:Http:Url"]?.Split(':').LastOrDefault()
-    ?? "5000";
-
-// Добавляем поддержку SignalR
+// SignalR
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = builder.Environment.IsDevelopment();
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
     options.KeepAliveInterval = TimeSpan.FromSeconds(30);
     options.HandshakeTimeout = TimeSpan.FromSeconds(30);
-}).AddJsonProtocol(options =>
+})
+.AddJsonProtocol(options =>
 {
     options.PayloadSerializerOptions.PropertyNamingPolicy = null;
 });
 
 builder.Services.AddControllersWithViews();
 
-// Регистрируем сервисы
+// Сервисы
 builder.Services.AddSingleton<CurrencyService>();
-builder.Services.AddSingleton<CurrencyHub>();
 
-// Настраиваем Kestrel
-builder.WebHost.ConfigureKestrel(serverOptions =>
-{
-    serverOptions.ListenAnyIP(int.Parse(port));
-    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(5);
-    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(2);
-});
+// Kestrel
+builder.WebHost.UseUrls("http://0.0.0.0:5051");
 
 var app = builder.Build();
 
-// Для продакшена используем исключения вместо страницы ошибок
-if (!app.Environment.IsDevelopment())
-{
-    app.UseDeveloperExceptionPage(); // Оставляем для отладки на сервере
-    app.UseHsts();
-}
-else
+// Middleware
+if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
+else
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection(); // если нет HTTPS
 app.UseStaticFiles();
 
 app.UseRouting();
 app.UseAuthorization();
 
-// SignalR хаб
+// SignalR
 app.MapHub<CurrencyHub>("/currencyHub");
 
+// MVC
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Course}/{action=Index}/{id?}");
 
-// Обработчик для проверки здоровья
 app.MapGet("/health", () => "OK");
 app.MapGet("/version", () => "1.0.0");
 
