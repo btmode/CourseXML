@@ -15,18 +15,24 @@ namespace CourseXML_main.CourseXML.Services
         private FileSystemWatcher _fileWatcher;
 
         public CurrencyService(
-            ILogger<CurrencyService> logger,
-            IHubContext<CurrencyHub> hubContext,
-            IConfiguration configuration)
+             ILogger<CurrencyService> logger,
+             IHubContext<CurrencyHub> hubContext,
+             IConfiguration configuration)
         {
             _logger = logger;
             _hubContext = hubContext;
 
-            // Получаем путь к XML файлу
-            _xmlFilePath = configuration["XmlFilePath"]
-                ?? "C:\\Users\\kondr\\Desktop\\rates.xml";
+            _xmlFilePath = configuration["LocalPaths:SourceXmlPath"]
+                ?? "/var/www/coursexml/Data/rates.xml"; 
 
             _logger.LogInformation("Используется XML файл: {Path}", _xmlFilePath);
+
+            var directory = Path.GetDirectoryName(_xmlFilePath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+                _logger.LogInformation("Создана директория: {Directory}", directory);
+            }
 
             // Загружаем начальные данные
             LoadData();
