@@ -248,15 +248,5 @@ namespace CourseXML_main.CourseXML.Services
                 o.Id.Equals(officeId, StringComparison.OrdinalIgnoreCase));
         }
 
-        public List<CityOffice> GetAllOffices()
-        {
-            return new List<CityOffice>(_offices);
-        }
-
-        public async Task ForceRefresh()
-        {
-            LoadData();
-            await SendUpdatesToClients();
-        }
     }
 }

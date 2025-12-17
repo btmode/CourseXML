@@ -1,39 +1,15 @@
 ﻿@model CityOffice
 
-<div class="background-logo"></div>
+<!-- Просто картинка вместо div -->
+<img src="/images/logo.png" class="background-logo" alt="Логотип">
 
-<div class="container tv-optimized">
-    <!-- Стильная шапка -->
-    <div class="header">
-        <div class="header-left">
-            <div class="bank-name">БАНК</div>
-            <div class="office-info-card">
-                <div class="office-text">@Model.Location</div>
-            </div>
-        </div>
-
-        <div class="header-right">
-            <div class="time-cards">
-                <div class="time-card">
-                    <div class="time-label">
-                        Текущее время
-                    </div>
-                    <div class="time-value" id="currentDateTime">@DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")</div>
-                </div>
-
-                <div class="time-card">
-                    <div class="time-label">
-                        Обновлено
-                    </div>
-                    <div class="time-value" id="lastUpdate">@DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")</div>
-                </div>
-            </div>
-        </div>
+<div class="header">
+    <div class="header-left">
+        <div class="bank-name">АО Тольяттихимбанк</div>
+        <div class="office-text">@Model.Location</div>
     </div>
-
-    <!-- Заголовок таблицы -->
-    <div class="table-header">
-        <h1 class="main-title">КУРСЫ ВАЛЮТ</h1>
+    <div class="time-card">
+        <div class="time-value" id="currentDateTime">@DateTime.Now.ToString($"dd.MM.yyyy HH:mm:ss")</div>
     </div>
 </div>
 
@@ -66,7 +42,6 @@
         }
     </tbody>
 </table>
-
 
 @section Scripts {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
@@ -124,7 +99,7 @@
             const minutes = String(date.getMinutes()).padStart(2, '0');
             const seconds = String(date.getSeconds()).padStart(2, '0');
 
-            return `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
+            return `${day}.${month}.${year} / ${hours}:${minutes}:${seconds}`;
         }
 
         // ============================================

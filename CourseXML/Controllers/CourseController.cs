@@ -12,7 +12,6 @@ public class CourseController : Controller
         _logger = logger;
     }
 
-
     
     public async Task<IActionResult> Index(string office)
     {
@@ -35,32 +34,4 @@ public class CourseController : Controller
         return View(officeData);
     }
 
-    //[HttpGet("/api/rates")]
-    //public async Task<IActionResult> GetRates([FromQuery] string office, [FromQuery] string? lastHash)
-    //{
-    //    _logger.LogInformation("Получение курсов для офиса {Office} (LastHash: {LastHash})", office, lastHash);
-
-    //    if (string.IsNullOrWhiteSpace(office))
-    //        return BadRequest("Не указан офис");
-
-       
-    //    await _currencyService.CheckAndUpdateRates();
-
-    //    var officeData = _currencyService.GetOffice(office);
-    //    if (officeData == null)
-    //    {
-    //        _logger.LogWarning("Офис {Office} не найден при запросе API", office);
-    //        return NotFound($"Офис '{office}' не найден");
-    //    }
-
-    //    var currentHash = _currencyService.GetCurrentHash();
-    //    bool hasChanged = lastHash != currentHash;
-
-    //    return Ok(new
-    //    {
-    //        Changed = hasChanged,
-    //        Hash = currentHash,
-    //        Data = hasChanged ? officeData : null
-    //    });
-    //}
 }
