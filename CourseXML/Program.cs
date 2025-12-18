@@ -1,5 +1,7 @@
 using CourseXML.Models;
 using CourseXML_main.CourseXML.Services;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,15 +20,34 @@ builder.Services.AddSignalR(options =>
 
 builder.Services.AddControllersWithViews();
 
-// ---------- ИСПРАВЬ ЭТУ ЧАСТЬ ----------
-// Было:
-// builder.Services.AddSingleton<CurrencyService>();
+// ---------- КОНФИГУРАЦИЯ И РЕГИСТРАЦИЯ СЕРВИСА ----------
+// 1. Регистрируем конфигурацию
+builder.Services.Configure<CurrencyServiceConfig>(
+    builder.Configuration.GetSection("CurrencyService"));
 
-// Стало:
+// 2. Регистрируем CurrencyService как HostedService
 builder.Services.AddHostedService<CurrencyService>();
+
+// 3. Добавляем синглтон для доступа из контроллеров
 builder.Services.AddSingleton<CurrencyService>(provider =>
-    provider.GetServices<IHostedService>().OfType<CurrencyService>().First());
-// ---------------------------------------
+{
+    // Получаем все IHostedService и находим CurrencyService
+    var hostedServices = provider.GetServices<IHostedService>();
+    var currencyService = hostedServices.OfType<CurrencyService>().FirstOrDefault();
+
+    if (currencyService == null)
+    {
+        // Если не нашли в IHostedService, создаем новый экземпляр
+        var logger = provider.GetRequiredService<ILogger<CurrencyService>>();
+        var hubContext = provider.GetRequiredService<IHubContext<CurrencyHub>>();
+        var configuration = provider.GetRequiredService<IConfiguration>();
+        var config = provider.GetRequiredService<IOptions<CurrencyServiceConfig>>();
+
+        currencyService = new CurrencyService(logger, hubContext, configuration, config);
+    }
+
+    return currencyService;
+});
 
 // Kestrel
 builder.WebHost.UseUrls("http://0.0.0.0:5050");
@@ -59,22 +80,63 @@ app.MapControllerRoute(
     pattern: "{controller=Course}/{action=Index}/{id?}");
 
 // Добавь endpoint для проверки работы CurrencyService
-app.MapGet("/debug/currency", (CurrencyService service) =>
+app.MapGet("/debug/currency", async (CurrencyService service) =>
 {
-    var office = service.GetOffice("tlt");
-    return new
+    // Ждем инициализации сервиса
+    if (!service.IsInitialized)
     {
-        Office = office?.Location,
-        Currencies = office?.Currencies,
-        TotalOffices = service.GetType()
-            .GetField("_offices", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?
-            .GetValue(service) is List<CityOffice> offices ? offices.Count : 0
-    };
+        return Results.Json(new
+        {
+            Status = "NotInitialized",
+            Message = "Service is initializing..."
+        });
+    }
+
+    var office = service.GetOffice("tlt");
+    var allOffices = service.GetAllOffices();
+
+    return Results.Json(new
+    {
+        Status = "OK",
+        Initialized = service.IsInitialized,
+        OfficesCount = allOffices.Count,
+        TLTOffice = office != null ? new
+        {
+            Location = office.Location,
+            CurrenciesCount = office.Currencies.Count,
+            Currencies = office.Currencies.Select(c => new
+            {
+                c.Name,
+                c.Purchase,
+                c.Sale
+            })
+        } : null,
+        AllOffices = allOffices.Select(o => new
+        {
+            Id = o.Id,
+            Location = o.Location,
+            CurrenciesCount = o.Currencies.Count
+        })
+    });
 });
 
-
+app.MapGet("/debug/force-update", async (CurrencyService service) =>
+{
+    var result = await service.ForceUpdateFromSourceAsync();
+    return Results.Json(new
+    {
+        Success = result,
+        Message = result ? "Update successful" : "No changes detected"
+    });
+});
 
 app.MapGet("/health", () => "OK");
 app.MapGet("/version", () => "1.0.0");
+
+// Endpoint для просмотра конфигурации
+app.MapGet("/debug/config", (IOptions<CurrencyServiceConfig> config) =>
+{
+    return Results.Json(config.Value);
+});
 
 app.Run();

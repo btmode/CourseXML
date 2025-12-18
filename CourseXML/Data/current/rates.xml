@@ -3,67 +3,67 @@
   <office id="tlt" location="Тольятти">
     <currency>
       <name>USD</name>
-      <purchase>89.20</purchase>
-      <sale>94.50</sale>
+      <purchase>90.50</purchase>
+      <sale>93.80</sale>
     </currency>
     <currency>
       <name>EUR</name>
-      <purchase>97.50</purchase>
-      <sale>101.80</sale>
+      <purchase>98.20</purchase>
+      <sale>102.50</sale>
     </currency>
     <currency>
       <name>GBP</name>
-      <purchase>114.10</purchase>
-      <sale>121.30</sale>
+      <purchase>115.30</purchase>
+      <sale>120.10</sale>
     </currency>
     <currency>
       <name>CNY</name>
-      <purchase>12.20</purchase>
-      <sale>13.50</sale>
+      <purchase>12.50</purchase>
+      <sale>13.20</sale>
     </currency>
   </office>
   <office id="perm" location="Пермь">
     <currency>
       <name>USD</name>
-      <purchase>90.30</purchase>
-      <sale>95.80</sale>
+      <purchase>9z.00</purchase>
+      <sale>94.30</sale>
     </currency>
     <currency>
       <name>EUR</name>
-      <purchase>99.50</purchase>
-      <sale>102.60</sale>
+      <purchase>98.80</purchase>
+      <sale>103.10</sale>
     </currency>
     <currency>
       <name>GBP</name>
-      <purchase>117.80</purchase>
-      <sale>119.20</sale>
+      <purchase>116.00</purchase>
+      <sale>120.80</sale>
     </currency>
     <currency>
       <name>CNY</name>
-      <purchase>12.40</purchase>
-      <sale>13.90</sale>
+      <purchase>12.70</purchase>
+      <sale>13.40</sale>
     </currency>
   </office>
   <office id="msk" location="Москва">
     <currency>
       <name>USD</name>
-      <purchase>91.80</purchase>
-      <sale>94.90</sale>
+      <purchase>89.20</purchase>
+      <sale>94.50</sale>
     </currency>
     <currency>
       <name>EUR</name>
-      <purchase>95.20</purchase>
-      <sale>100.50</sale>
+      <purchase>94.00</purchase>
+      <sale>105.30</sale>
     </currency>
     <currency>
       <name>GBP</name>
-      <purchase>118.30</purchase>
-      <sale>120.60</sale>
+      <purchase>113.50</purchase>
+      <sale>122.30</sale>
     </currency>
     <currency>
       <name>CNY</name>
-      <purchase>13.10</purchase>
-      <sale>13.20</sale>
+      <purchase>13.80</purchase>
+      <sale>14.50</sale>
     </currency>
   </office>
 </exchangeRates>
