@@ -50,11 +50,14 @@
 @section Scripts {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
     <script>
-        const officeId = '@Model.Id';
+        const officeId = '@Model.Id'.toLowerCase();
         let connection = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 20;
+        let isManualDisconnect = false;
+        let lastUpdateTime = Date.now();
 
-
-        //  ВРЕМЯ 
+        // Обновление времени
         function updateDateTime() {
             const now = new Date();
             const day = String(now.getDate()).padStart(2, '0');
@@ -70,18 +73,72 @@
             setTimeout(updateDateTime, 1000);
         }
 
-
-        // SIGNALR - ПРОСТАЯ ВЕРСИЯ
         async function startSignalR() {
             try {
+                console.log('Начинаем подключение SignalR...');
+
+                // Если уже есть активное соединение, не создаем новое
+                if (connection && connection.state === signalR.HubConnectionState.Connected) {
+                    console.log('Уже подключен');
+                    return;
+                }
+
+                // Если есть старое соединение, закрываем его
+                if (connection) {
+                    try {
+                        await connection.stop();
+                        console.log('Старое соединение закрыто');
+                    } catch (e) {
+                        console.warn('Ошибка при закрытии старого соединения:', e);
+                    }
+                }
+
+                // Создаем новое соединение
                 connection = new signalR.HubConnectionBuilder()
                     .withUrl("/currencyHub")
-                    .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
+                    .withAutomaticReconnect({
+                        nextRetryDelayInMilliseconds: retryContext => {
+                            // Умная логика повторного подключения
+                            reconnectAttempts++;
+                            console.log(`Попытка повторного подключения ${reconnectAttempts}/20`);
+
+                            if (reconnectAttempts > maxReconnectAttempts) {
+                                console.error('Превышено максимальное количество попыток подключения');
+                                return null; // Останавливаем попытки
+                            }
+
+                            // Увеличиваем интервалы между попытками
+                            if (retryContext.previousRetryCount === 0) {
+                                return 1000; // 1 секунда
+                            } else if (retryContext.previousRetryCount < 3) {
+                                return 3000; // 3 секунды
+                            } else if (retryContext.previousRetryCount < 5) {
+                                return 5000; // 5 секунд
+                            } else {
+                                return 10000; // 10 секунд
+                            }
+                        }
+                    })
+                    .configureLogging(signalR.LogLevel.Information)
                     .build();
 
-                // Обработчик обновлений курсов
+                // === ОБРАБОТЧИКИ СОБЫТИЙ ===
+
+                // Подтверждение подключения к группе
+                connection.on("JoinedGroup", (groupId) => {
+                    console.log(`Присоединен к группе: ${groupId}`);
+                    reconnectAttempts = 0; // Сбрасываем счетчик при успешном подключении
+                });
+
+                // Получение обновления курсов
                 connection.on("ReceiveUpdate", function(officeData) {
-                    if (!officeData || !officeData.Currencies) return;
+                    if (!officeData || !officeData.Currencies) {
+                        console.warn('Получены некорректные данные');
+                        return;
+                    }
+
+                    console.log('Получено обновление курсов:', officeData.UpdateTime);
+                    lastUpdateTime = Date.now();
 
                     // Обновляем курсы валют
                     officeData.Currencies.forEach(currency => {
@@ -93,14 +150,90 @@
                     });
                 });
 
+                // Keep-alive от сервера
+                connection.on("KeepAlive", (timestamp) => {
+                    console.log('Keep-alive получен:', new Date(timestamp).toLocaleTimeString());
+                });
+
+                // Обработка переподключения
+                connection.onreconnecting((error) => {
+                    console.log('Переподключение SignalR...', error?.message || '');
+                });
+
+                connection.onreconnected((connectionId) => {
+                    console.log('Переподключение успешно! ID:', connectionId);
+                    joinOfficeGroup();
+                    reconnectAttempts = 0;
+                });
+
+                connection.onclose((error) => {
+                    console.log('Соединение закрыто', error?.message || '');
+
+                    if (!isManualDisconnect && reconnectAttempts < maxReconnectAttempts) {
+                        console.log('Пытаемся переподключиться...');
+                        setTimeout(() => {
+                            if (connection.state === signalR.HubConnectionState.Disconnected) {
+                                startSignalR();
+                            }
+                        }, 2000);
+                    }
+                });
+
                 await connection.start();
-                await connection.invoke("JoinGroup", officeId);
-                console.log('SignalR подключен');
+                console.log('SignalR подключен!');
+
+                await joinOfficeGroup();
+
+                startConnectionMonitor();
 
             } catch (err) {
-                console.error('Ошибка SignalR:', err);
-                setTimeout(startSignalR, 5000);
+                console.error('Ошибка подключения SignalR:', err);
+
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    console.log(`Повторная попытка через 3 секунды (${reconnectAttempts}/${maxReconnectAttempts})`);
+                    setTimeout(startSignalR, 3000);
+                } else {
+                    console.error('Превышено максимальное количество попыток подключения');
+                    alert('Не удалось подключиться к серверу. Пожалуйста, обновите страницу.');
+                }
             }
+        }
+
+        async function joinOfficeGroup() {
+            if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+                console.warn('Не могу войти в группу: нет соединения');
+                return;
+            }
+
+            try {
+                await connection.invoke("JoinOfficeGroup", officeId);
+                console.log(`Запрос на присоединение к группе ${officeId} отправлен`);
+            } catch (err) {
+                console.error('Ошибка при входе в группу:', err);
+                setTimeout(joinOfficeGroup, 2000);
+            }
+        }
+
+        // Мониторинг соединения
+        function startConnectionMonitor() {
+            setInterval(() => {
+                if (connection && connection.state === signalR.HubConnectionState.Connected) {
+                    // Проверяем, когда было последнее обновление
+                    const timeSinceLastUpdate = Date.now() - lastUpdateTime;
+                    if (timeSinceLastUpdate > 120000) { // 2 минуты без обновлений
+                        console.log('Долго не было обновлений, проверяем соединение...');
+                        if (connection.state === signalR.HubConnectionState.Connected) {
+                            connection.invoke("Ping")
+                                .then(response => console.log('Ping ответ:', response))
+                                .catch(err => {
+                                    console.warn('Ping не прошел:', err);
+                                    startSignalR();
+                                });
+                        }
+                    }
+                }
+            }, 30000); // Каждые 30 секунд
         }
 
         // ОБНОВЛЕНИЕ КУРСОВ С АНИМАЦИЕЙ
@@ -129,10 +262,10 @@
 
                 // Цветовая индикация
                 if (numericNewValue > oldValue) {
-                    element.style.color = '#2ecc71'; // Зеленый
+                    element.style.color = '#2ecc71'; 
                     element.style.textShadow = '0 0 20px rgba(46, 204, 113, 0.7)';
                 } else {
-                    element.style.color = '#e74c3c'; // Красный
+                    element.style.color = '#e74c3c';
                     element.style.textShadow = '0 0 20px rgba(231, 76, 60, 0.7)';
                 }
 
@@ -141,7 +274,6 @@
                     element.style.transform = `scale(${1 + 0.1 * Math.sin(progress * Math.PI)})`;
                     requestAnimationFrame(update);
                 } else {
-                    // Возвращаем нормальные стили через 1.5 секунды
                     setTimeout(() => {
                         element.style.color = '';
                         element.style.textShadow = '';
@@ -162,17 +294,60 @@
             return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
         }
 
-        function initApp() {
-            updateDateTime(); // Запускаем часы
-            startSignalR();   // Запускаем SignalR
+        function forceReconnect() {
+            console.log('Принудительное переподключение...');
+            isManualDisconnect = false;
+            reconnectAttempts = 0;
+            startSignalR();
         }
 
-        // Запускаем когда страница загрузится
+        function checkConnectionStatus() {
+            if (!connection) {
+                return 'Нет соединения';
+            }
+
+            switch(connection.state) {
+                case signalR.HubConnectionState.Connected:
+                    return 'Подключен';
+                case signalR.HubConnectionState.Connecting:
+                    return 'Подключение...';
+                case signalR.HubConnectionState.Reconnecting:
+                    return 'Переподключение...';
+                case signalR.HubConnectionState.Disconnected:
+                    return 'Отключен';
+                default:
+                    return 'Неизвестно';
+            }
+        }
+
+        function initApp() {
+            console.log('🚀 Инициализация приложения...');
+            updateDateTime(); 
+            startSignalR();   
+
+            window.debugSignalR = {
+                reconnect: forceReconnect,
+                status: checkConnectionStatus,
+                getOfficeId: () => officeId
+            };
+
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden && connection?.state === signalR.HubConnectionState.Disconnected) {
+                    console.log('👁️ Страница снова видима, проверяем соединение...');
+                    startSignalR();
+                }
+            });
+        }
+
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initApp);
         } else {
             initApp();
         }
+
+        console.log('ℹ️ Для отладки SignalR используйте:');
+        console.log('  debugSignalR.reconnect() - принудительное переподключение');
+        console.log('  debugSignalR.status() - статус соединения');
     </script>
 }
 

@@ -14,6 +14,8 @@ namespace CourseXML_main.CourseXML.Services
         public int PollingIntervalSeconds { get; set; } = 2;
         public bool UseFileSystemWatcher { get; set; } = true;
         public bool EnableVerboseLogging { get; set; } = false;
+        public bool EnableKeepAlive { get; set; } = true;
+        public int KeepAliveIntervalSeconds { get; set; } = 30;
 
         // Пути к файлам (будут определены автоматически)
         public string SourceXmlPath { get; set; } = "";
@@ -36,9 +38,9 @@ namespace CourseXML_main.CourseXML.Services
         private List<CityOffice> _offices = new();
         private FileSystemWatcher? _sourceFileWatcher;
         private DateTime _lastSourceCheck = DateTime.MinValue;
-        private readonly PeriodicTimer _pollingTimer;
         private readonly SemaphoreSlim _fileLock = new(1, 1);
         private bool _isInitialized = false;
+        private readonly CancellationTokenSource _cts = new();
 
         public bool IsInitialized => _isInitialized;
         public List<CityOffice> Offices => _offices;
@@ -79,50 +81,10 @@ namespace CourseXML_main.CourseXML.Services
                 SetupSourceFileWatcher();
             }
 
-            // Создаем таймер с конфигурируемым интервалом
-            _pollingTimer = new PeriodicTimer(TimeSpan.FromSeconds(_config.PollingIntervalSeconds));
             _lastSourceCheck = GetSourceFileLastWriteTime();
 
             _isInitialized = true;
             _logger.LogInformation("CurrencyService инициализирован. Офисов: {Count}", _offices.Count);
-        }
-
-        // ========== АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПУТЕЙ ==========
-        private (string source, string current, string archive) GetPathsForCurrentOS()
-        {
-            string source, current, archive;
-
-            if (Environment.OSVersion.Platform == PlatformID.Unix ||
-                Environment.OSVersion.Platform == PlatformID.MacOSX)
-            {
-                // Linux/Mac пути
-                source = _configuration["LinuxPaths:SourceXmlPath"]
-                    ?? "/var/www/coursexml/Data/rates.xml";
-                current = _configuration["LinuxPaths:CurrentXmlPath"]
-                    ?? "/var/www/coursexml/Data/current/rates.xml";
-                archive = _configuration["LinuxPaths:ArchiveFolder"]
-                    ?? "/var/www/coursexml/Data/archive/";
-            }
-            else
-            {
-                // Windows пути
-                source = _configuration["LocalPaths:SourceXmlPath"]
-                    ?? "C:\\Users\\danon\\Desktop\\rates.xml";
-                current = _configuration["LocalPaths:CurrentXmlPath"]
-                    ?? "C:\\Users\\danon\\Desktop\\CourseXML\\CourseXML\\Data\\current\\rates.xml";
-                archive = _configuration["LocalPaths:ArchiveFolder"]
-                    ?? "C:\\Users\\danon\\Desktop\\CourseXML\\CourseXML\\Data\\archive\\";
-            }
-
-            // Если пути заданы в конфиге сервиса - используем их
-            if (!string.IsNullOrEmpty(_config.SourceXmlPath))
-                source = _config.SourceXmlPath;
-            if (!string.IsNullOrEmpty(_config.CurrentXmlPath))
-                current = _config.CurrentXmlPath;
-            if (!string.IsNullOrEmpty(_config.ArchiveFolder))
-                archive = _config.ArchiveFolder;
-
-            return (source, current, archive);
         }
 
         // ========== BACKGROUND SERVICE ==========
@@ -130,17 +92,67 @@ namespace CourseXML_main.CourseXML.Services
         {
             _logger.LogInformation("Запущен polling с интервалом {Interval} секунд", _config.PollingIntervalSeconds);
 
-            while (await _pollingTimer.WaitForNextTickAsync(stoppingToken)
-                   && !stoppingToken.IsCancellationRequested)
+            // Запускаем keep-alive отдельной задачей
+            if (_config.EnableKeepAlive)
+            {
+                _ = Task.Run(async () => await KeepAliveLoopAsync(_cts.Token), _cts.Token);
+            }
+
+            // Основной polling цикл
+            while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
                     await CheckForSourceUpdatesByPollingAsync();
+                    await Task.Delay(TimeSpan.FromSeconds(_config.PollingIntervalSeconds), stoppingToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Ошибка в polling цикле");
+                    await Task.Delay(5000, stoppingToken); // Ждем 5 секунд при ошибке
                 }
+            }
+        }
+
+        // ========== KEEP-ALIVE ЦИКЛ ==========
+        private async Task KeepAliveLoopAsync(CancellationToken cancellationToken)
+        {
+            _logger.LogInformation("Запущен keep-alive с интервалом {Interval} секунд", _config.KeepAliveIntervalSeconds);
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await SendKeepAliveAsync();
+                    await Task.Delay(TimeSpan.FromSeconds(_config.KeepAliveIntervalSeconds), cancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Ошибка в keep-alive цикле");
+                    await Task.Delay(5000, cancellationToken);
+                }
+            }
+        }
+
+        private async Task SendKeepAliveAsync()
+        {
+            try
+            {
+                // Отправляем ping всем подключенным клиентам
+                await _hubContext.Clients.All.SendAsync("KeepAlive", DateTime.UtcNow.ToString("o"));
+                _logger.LogDebug("Отправлен keep-alive сигнал");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка отправки keep-alive");
             }
         }
 
@@ -195,24 +207,37 @@ namespace CourseXML_main.CourseXML.Services
                     return;
                 }
 
+                // Определяем ОС и настраиваем буфер
+                bool isLinux = Environment.OSVersion.Platform == PlatformID.Unix ||
+                              Environment.OSVersion.Platform == PlatformID.MacOSX;
+
+                int bufferSize = isLinux ? 65536 * 16 : 65536; // 1MB для Linux, 64KB для Windows
+
                 _sourceFileWatcher = new FileSystemWatcher
                 {
                     Path = directory,
                     Filter = fileName,
-                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
-                    EnableRaisingEvents = true
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
+                    EnableRaisingEvents = true,
+                    InternalBufferSize = bufferSize,
+                    IncludeSubdirectories = false
                 };
+
+                _logger.LogInformation("FileSystemWatcher настроен для {OS} с буфером {BufferSize} байт",
+                    isLinux ? "Linux" : "Windows", bufferSize);
+
+                int debounceMs = isLinux ? 1000 : 300; 
 
                 _sourceFileWatcher.Changed += async (sender, e) =>
                 {
                     try
                     {
-                        // Дебаунсинг для Linux (там может быть несколько событий)
-                        await Task.Delay(500);
+                        await Task.Delay(debounceMs);
 
                         if (_config.EnableVerboseLogging)
                         {
-                            _logger.LogInformation("FSWATCHER: Файл изменён");
+                            _logger.LogInformation("FSWATCHER: Файл изменён: {ChangeType}, путь: {Path}",
+                                e.ChangeType, e.FullPath);
                         }
 
                         await CheckAndUpdateFromSourceAsync();
@@ -223,7 +248,36 @@ namespace CourseXML_main.CourseXML.Services
                     }
                 };
 
-                _logger.LogInformation("FileSystemWatcher настроен");
+                // Также обрабатываем Created и Deleted события
+                _sourceFileWatcher.Created += async (sender, e) =>
+                {
+                    await Task.Delay(debounceMs);
+                    await CheckAndUpdateFromSourceAsync();
+                };
+
+                _sourceFileWatcher.Deleted += async (sender, e) =>
+                {
+                    _logger.LogWarning("Файл {FileName} удален", e.Name);
+                };
+
+                _sourceFileWatcher.Error += (sender, e) =>
+                {
+                    var ex = e.GetException();
+                    _logger.LogError(ex, "Ошибка FileSystemWatcher. Возможно буфер переполнен.");
+
+                    // При ошибке пересоздаем watcher
+                    if (ex is InternalBufferOverflowException)
+                    {
+                        _logger.LogWarning("Буфер переполнен! Увеличиваем размер...");
+                        Task.Run(async () =>
+                        {
+                            await Task.Delay(5000);
+                            _sourceFileWatcher?.Dispose();
+                            SetupSourceFileWatcher();
+                        });
+                    }
+                };
+
             }
             catch (Exception ex)
             {
@@ -232,7 +286,6 @@ namespace CourseXML_main.CourseXML.Services
             }
         }
 
-        // ========== ОСНОВНАЯ ЛОГИКА ==========
         private async Task<bool> CheckAndUpdateFromSourceAsync()
         {
             await _fileLock.WaitAsync();
@@ -247,7 +300,6 @@ namespace CourseXML_main.CourseXML.Services
                     return false;
                 }
 
-                // Читаем source файл
                 string sourceContent;
                 using (var stream = new FileStream(_sourceXmlPath, FileMode.Open,
                        FileAccess.Read, FileShare.ReadWrite))
@@ -262,7 +314,6 @@ namespace CourseXML_main.CourseXML.Services
                     return false;
                 }
 
-                // Парсим XML
                 XDocument sourceXml;
                 try
                 {
@@ -281,10 +332,8 @@ namespace CourseXML_main.CourseXML.Services
                     return false;
                 }
 
-                // Читаем current файл для сравнения
                 List<CityOffice> currentOffices = ReadCurrentFile();
 
-                // Сравниваем данные
                 bool dataChanged = !AreOfficesEqual(currentOffices, sourceOffices);
 
                 if (!dataChanged)
@@ -295,7 +344,6 @@ namespace CourseXML_main.CourseXML.Services
 
                 _logger.LogInformation("Обнаружены новые курсы, начинаем обновление...");
 
-                // Архивируем текущий файл
                 if (File.Exists(_currentXmlPath))
                 {
                     try
@@ -311,14 +359,11 @@ namespace CourseXML_main.CourseXML.Services
                     }
                 }
 
-                // Обновляем current файл
                 await File.WriteAllTextAsync(_currentXmlPath, sourceContent);
                 _logger.LogInformation("Current файл обновлён из source");
 
-                // Обновляем данные в памяти
                 _offices = sourceOffices;
 
-                // Отправляем обновления клиентам
                 await SendUpdatesToClients();
 
                 _logger.LogInformation("Обновление успешно завершено");
@@ -335,7 +380,6 @@ namespace CourseXML_main.CourseXML.Services
             }
         }
 
-        // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
         private List<CityOffice> ReadCurrentFile()
         {
             if (!File.Exists(_currentXmlPath))
@@ -522,13 +566,16 @@ namespace CourseXML_main.CourseXML.Services
                             office.Id,
                             office.Location,
                             office.Currencies,
-                            UpdateTime = DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")
+                            UpdateTime = DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss"),
+                            Timestamp = DateTime.UtcNow.Ticks
                         };
 
                         await _hubContext
                             .Clients
                             .Group(office.Id.ToLower())
                             .SendAsync("ReceiveUpdate", payload);
+
+                        _logger.LogDebug("Отправлено обновление для офиса {Id}", office.Id);
                     }
                     catch (Exception ex)
                     {
@@ -536,20 +583,20 @@ namespace CourseXML_main.CourseXML.Services
                     }
                 }
 
-                _logger.LogInformation("Обновления отправлены");
+                _logger.LogInformation("Обновления отправлены для {Count} офисов", _offices.Count);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Ошибка отправки обновлений");
             }
         }
+
         public async Task<bool> ForceUpdateFromSourceAsync()
         {
             _logger.LogInformation("Принудительное обновление из source файла");
             return await CheckAndUpdateFromSourceAsync();
         }
 
-        // ========== PUBLIC API ==========
         public CityOffice? GetOffice(string officeId)
         {
             return _offices.FirstOrDefault(o =>
@@ -561,11 +608,49 @@ namespace CourseXML_main.CourseXML.Services
             return _offices.ToList();
         }
 
+        //   ОПРЕДЕЛЕНИЕ ПУТЕЙ 
+        private (string source, string current, string archive) GetPathsForCurrentOS()
+        {
+            string source, current, archive;
+
+            if (Environment.OSVersion.Platform == PlatformID.Unix ||
+                Environment.OSVersion.Platform == PlatformID.MacOSX)
+            {
+                // Linux/Mac пути
+                source = _configuration["LinuxPaths:SourceXmlPath"]
+                    ?? "/var/www/coursexml/Data/rates.xml";
+                current = _configuration["LinuxPaths:CurrentXmlPath"]
+                    ?? "/var/www/coursexml/Data/current/rates.xml";
+                archive = _configuration["LinuxPaths:ArchiveFolder"]
+                    ?? "/var/www/coursexml/Data/archive/";
+            }
+            else
+            {
+                // Windows пути
+                source = _configuration["LocalPaths:SourceXmlPath"]
+                    ?? "C:\\Users\\danon\\Desktop\\rates.xml";
+                current = _configuration["LocalPaths:CurrentXmlPath"]
+                    ?? "C:\\Users\\danon\\Desktop\\CourseXML\\CourseXML\\Data\\current\\rates.xml";
+                archive = _configuration["LocalPaths:ArchiveFolder"]
+                    ?? "C:\\Users\\danon\\Desktop\\CourseXML\\CourseXML\\Data\\archive\\";
+            }
+
+            // Если пути заданы в конфиге сервиса - используем их
+            if (!string.IsNullOrEmpty(_config.SourceXmlPath))
+                source = _config.SourceXmlPath;
+            if (!string.IsNullOrEmpty(_config.CurrentXmlPath))
+                current = _config.CurrentXmlPath;
+            if (!string.IsNullOrEmpty(_config.ArchiveFolder))
+                archive = _config.ArchiveFolder;
+
+            return (source, current, archive);
+        }
+
         // ========== DISPOSE ==========
         public override void Dispose()
         {
+            _cts.Cancel();
             _sourceFileWatcher?.Dispose();
-            _pollingTimer?.Dispose();
             _fileLock?.Dispose();
             base.Dispose();
         }
