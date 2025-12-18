@@ -1,3 +1,4 @@
+using CourseXML.Models;
 using CourseXML_main.CourseXML.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,11 +18,18 @@ builder.Services.AddSignalR(options =>
 
 builder.Services.AddControllersWithViews();
 
-// Сервисы
-builder.Services.AddSingleton<CurrencyService>();
+// ---------- ИСПРАВЬ ЭТУ ЧАСТЬ ----------
+// Было:
+// builder.Services.AddSingleton<CurrencyService>();
+
+// Стало:
+builder.Services.AddHostedService<CurrencyService>();
+builder.Services.AddSingleton<CurrencyService>(provider =>
+    provider.GetServices<IHostedService>().OfType<CurrencyService>().First());
+// ---------------------------------------
 
 // Kestrel
-builder.WebHost.UseUrls("http://0.0.0.0:5051");
+builder.WebHost.UseUrls("http://0.0.0.0:5050");
 
 var app = builder.Build();
 
@@ -49,6 +57,22 @@ app.MapHub<CurrencyHub>("/currencyHub");
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Course}/{action=Index}/{id?}");
+
+// Добавь endpoint для проверки работы CurrencyService
+app.MapGet("/debug/currency", (CurrencyService service) =>
+{
+    var office = service.GetOffice("tlt");
+    return new
+    {
+        Office = office?.Location,
+        Currencies = office?.Currencies,
+        TotalOffices = service.GetType()
+            .GetField("_offices", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?
+            .GetValue(service) is List<CityOffice> offices ? offices.Count : 0
+    };
+});
+
+
 
 app.MapGet("/health", () => "OK");
 app.MapGet("/version", () => "1.0.0");
