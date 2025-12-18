@@ -1,29 +1,12 @@
-using System.Globalization;
-using System.Xml.Linq;
 using CourseXML.Models;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
+using System.Globalization;
+using System.Xml.Linq;
 
 namespace CourseXML_main.CourseXML.Services
 {
-    // ========== УПРОЩЕННЫЙ КЛАСС КОНФИГУРАЦИИ ==========
-    public class CurrencyServiceConfig
-    {
-        // Основные параметры
-        public int PollingIntervalSeconds { get; set; } = 2;
-        public bool UseFileSystemWatcher { get; set; } = true;
-        public bool EnableVerboseLogging { get; set; } = false;
-        public bool EnableKeepAlive { get; set; } = true;
-        public int KeepAliveIntervalSeconds { get; set; } = 30;
-
-        // Пути к файлам (будут определены автоматически)
-        public string SourceXmlPath { get; set; } = "";
-        public string CurrentXmlPath { get; set; } = "";
-        public string ArchiveFolder { get; set; } = "";
-    }
-
-    // ========== ОСНОВНОЙ СЕРВИС ==========
     public class CurrencyService : BackgroundService
     {
         private readonly string _sourceXmlPath;
@@ -34,6 +17,7 @@ namespace CourseXML_main.CourseXML.Services
         private readonly IHubContext<CurrencyHub> _hubContext;
         private readonly CurrencyServiceConfig _config;
         private readonly IConfiguration _configuration;
+        private readonly RemoteServerSettings _remoteSettings;
 
         private List<CityOffice> _offices = new();
         private FileSystemWatcher? _sourceFileWatcher;
@@ -42,19 +26,18 @@ namespace CourseXML_main.CourseXML.Services
         private bool _isInitialized = false;
         private readonly CancellationTokenSource _cts = new();
 
-        public bool IsInitialized => _isInitialized;
-        public List<CityOffice> Offices => _offices;
-
         public CurrencyService(
             ILogger<CurrencyService> logger,
             IHubContext<CurrencyHub> hubContext,
             IConfiguration configuration,
-            IOptions<CurrencyServiceConfig> config)
+            IOptions<CurrencyServiceConfig> config,
+            IOptions<RemoteServerSettings> remoteSettings) 
         {
             _logger = logger;
             _hubContext = hubContext;
             _configuration = configuration;
             _config = config.Value;
+            _remoteSettings = remoteSettings.Value; 
 
             // АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПУТЕЙ ДЛЯ WINDOWS/LINUX
             (_sourceXmlPath, _currentXmlPath, _archiveFolder) = GetPathsForCurrentOS();
@@ -64,18 +47,21 @@ namespace CourseXML_main.CourseXML.Services
             _logger.LogInformation("Source: {Source}", _sourceXmlPath);
             _logger.LogInformation("Current: {Current}", _currentXmlPath);
             _logger.LogInformation("Archive: {Archive}", _archiveFolder);
-            _logger.LogInformation("Polling интервал: {Interval} секунд", _config.PollingIntervalSeconds);
 
-            // Создаем директории если их нет
+            // Логируем настройки удаленного сервера если используются
+            if (_config.UseRemoteFile && !string.IsNullOrEmpty(_remoteSettings.Host))
+            {
+                _logger.LogInformation("Удаленный сервер: {User}@{Host}:{Port}",
+                    _remoteSettings.Username, _remoteSettings.Host, _remoteSettings.Port);
+                _logger.LogInformation("Удаленный файл: {Path}", _remoteSettings.FullRemotePath);
+            }
+
             EnsureDirectories();
 
-            // Копируем source в current если current не существует
             EnsureCurrentFile();
 
-            // Загружаем данные
             LoadData();
 
-            // Настраиваем FileSystemWatcher если включен
             if (_config.UseFileSystemWatcher)
             {
                 SetupSourceFileWatcher();
@@ -87,24 +73,144 @@ namespace CourseXML_main.CourseXML.Services
             _logger.LogInformation("CurrencyService инициализирован. Офисов: {Count}", _offices.Count);
         }
 
-        // ========== BACKGROUND SERVICE ==========
+        private async Task<bool> DownloadFromRemoteServerAsync()
+        {
+            try
+            {
+                if (_remoteSettings == null ||
+                    string.IsNullOrEmpty(_remoteSettings.Host) ||
+                    string.IsNullOrEmpty(_remoteSettings.Username))
+                {
+                    _logger.LogWarning("Не настроен удаленный сервер");
+                    return false;
+                }
+
+                _logger.LogInformation("Скачивание файла с {User}@{Host}:{Port}...",
+                    _remoteSettings.Username, _remoteSettings.Host, _remoteSettings.Port);
+
+                var remotePath = $"{_remoteSettings.Username}@{_remoteSettings.Host}:{_remoteSettings.FullRemotePath}";
+                var localPath = _sourceXmlPath;
+
+                var process = new Process();
+                process.StartInfo.FileName = "scp";
+
+                // Настраиваем аутентификацию
+                string arguments = $"-P {_remoteSettings.Port} " +
+                                  "-o StrictHostKeyChecking=no " +
+                                  "-o ConnectTimeout=10 " +
+                                  $"{remotePath} \"{localPath}\"";
+
+                if (_remoteSettings.UseSshKey && !string.IsNullOrEmpty(_remoteSettings.SshKeyPath))
+                {
+                    // Используем SSH ключ
+                    if (!File.Exists(_remoteSettings.SshKeyPath))
+                    {
+                        _logger.LogError("SSH ключ не найден: {Path}", _remoteSettings.SshKeyPath);
+                        return false;
+                    }
+
+                    arguments = $"-i \"{_remoteSettings.SshKeyPath}\" " + arguments;
+                }
+                else if (!string.IsNullOrEmpty(_remoteSettings.Password))
+                {
+                    // Используем пароль через sshpass
+                    process.StartInfo.FileName = "sshpass";
+                    arguments = $"-p \"{_remoteSettings.Password}\" scp " + arguments;
+                }
+
+                process.StartInfo.Arguments = arguments;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+
+                if (_config.EnableVerboseLogging)
+                {
+                    _logger.LogDebug("Выполняем команду: {Command} {Args}",
+                        process.StartInfo.FileName, process.StartInfo.Arguments);
+                }
+
+                process.Start();
+                await process.WaitForExitAsync();
+
+                var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
+
+                if (process.ExitCode == 0)
+                {
+                    _logger.LogInformation("Файл успешно скачан с {Host}", _remoteSettings.Host);
+                    return true;
+                }
+                else
+                {
+                    _logger.LogError("Ошибка скачивания. Код: {ExitCode}, Ошибка: {Error}",
+                        process.ExitCode, error);
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Исключение при скачивании файла с удаленного сервера");
+                return false;
+            }
+        }
+
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Запущен polling с интервалом {Interval} секунд", _config.PollingIntervalSeconds);
+            _logger.LogInformation("Запущен polling с интервалом {Interval} секунд",
+                _config.PollingIntervalSeconds);
 
-            // Запускаем keep-alive отдельной задачей
+            // Keep-alive таймер
             if (_config.EnableKeepAlive)
             {
                 _ = Task.Run(async () => await KeepAliveLoopAsync(_cts.Token), _cts.Token);
             }
 
-            // Основной polling цикл
+            // УДАЛЕННЫЙ SERVER polling
+            if (_config.UseRemoteFile && !string.IsNullOrEmpty(_remoteSettings.Host))
+            {
+                _logger.LogInformation("🔄 Удаленный polling с интервалом {Interval} секунд",
+                    _config.RemotePollingIntervalSeconds);
+
+                var remoteTimer = new PeriodicTimer(
+                    TimeSpan.FromSeconds(_config.RemotePollingIntervalSeconds));
+
+                _ = Task.Run(async () =>
+                {
+                    while (await remoteTimer.WaitForNextTickAsync(stoppingToken))
+                    {
+                        try
+                        {
+                            await CheckAndUpdateFromSourceAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Ошибка в remote polling цикле");
+                        }
+                    }
+                }, stoppingToken);
+            }
+            // ЛОКАЛЬНЫЙ FileSystemWatcher (работает ВМЕСТЕ с remote если нужно)
+            else if (_config.UseFileSystemWatcher && !_config.UseRemoteFile)
+            {
+                SetupSourceFileWatcher();
+            }
+
+            // ОСНОВНОЙ polling цикл (работает всегда)
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    await CheckForSourceUpdatesByPollingAsync();
-                    await Task.Delay(TimeSpan.FromSeconds(_config.PollingIntervalSeconds), stoppingToken);
+                    // Если не используем удаленный файл ИЛИ хотим проверять локально тоже
+                    if (!_config.UseRemoteFile || _config.PollingIntervalSeconds > 0)
+                    {
+                        await CheckForSourceUpdatesByPollingAsync();
+                    }
+
+                    await Task.Delay(
+                        TimeSpan.FromSeconds(_config.PollingIntervalSeconds),
+                        stoppingToken);
                 }
                 catch (TaskCanceledException)
                 {
@@ -113,12 +219,11 @@ namespace CourseXML_main.CourseXML.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Ошибка в polling цикле");
-                    await Task.Delay(5000, stoppingToken); // Ждем 5 секунд при ошибке
+                    await Task.Delay(5000, stoppingToken);
                 }
             }
         }
 
-        // ========== KEEP-ALIVE ЦИКЛ ==========
         private async Task KeepAliveLoopAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("Запущен keep-alive с интервалом {Interval} секунд", _config.KeepAliveIntervalSeconds);
@@ -146,7 +251,6 @@ namespace CourseXML_main.CourseXML.Services
         {
             try
             {
-                // Отправляем ping всем подключенным клиентам
                 await _hubContext.Clients.All.SendAsync("KeepAlive", DateTime.UtcNow.ToString("o"));
                 _logger.LogDebug("Отправлен keep-alive сигнал");
             }
@@ -156,7 +260,6 @@ namespace CourseXML_main.CourseXML.Services
             }
         }
 
-        // ========== ПОЛЛИНГ ==========
         private async Task CheckForSourceUpdatesByPollingAsync()
         {
             try
@@ -171,7 +274,7 @@ namespace CourseXML_main.CourseXML.Services
                     }
 
                     _lastSourceCheck = currentSourceLastWrite;
-                    await Task.Delay(300); // Ждем завершения записи
+                    await Task.Delay(300); 
                     await CheckAndUpdateFromSourceAsync();
                 }
             }
@@ -193,7 +296,6 @@ namespace CourseXML_main.CourseXML.Services
             }
         }
 
-        // ========== FILESYSTEM WATCHER ==========
         private void SetupSourceFileWatcher()
         {
             try
@@ -248,7 +350,6 @@ namespace CourseXML_main.CourseXML.Services
                     }
                 };
 
-                // Также обрабатываем Created и Deleted события
                 _sourceFileWatcher.Created += async (sender, e) =>
                 {
                     await Task.Delay(debounceMs);
@@ -265,7 +366,6 @@ namespace CourseXML_main.CourseXML.Services
                     var ex = e.GetException();
                     _logger.LogError(ex, "Ошибка FileSystemWatcher. Возможно буфер переполнен.");
 
-                    // При ошибке пересоздаем watcher
                     if (ex is InternalBufferOverflowException)
                     {
                         _logger.LogWarning("Буфер переполнен! Увеличиваем размер...");
@@ -292,7 +392,36 @@ namespace CourseXML_main.CourseXML.Services
 
             try
             {
-                _logger.LogInformation("Проверка source файла на изменения...");
+                bool isRemoteFileDownloaded = false;
+
+                if (_config.UseRemoteFile && !string.IsNullOrEmpty(_remoteSettings?.Host))
+                {
+                    _logger.LogInformation("🔄 Проверка удаленного файла на сервере {Host}...",
+                        _remoteSettings.Host);
+
+                    var downloaded = await DownloadFromRemoteServerAsync();
+                    if (downloaded)
+                    {
+                        _logger.LogInformation("✅ Файл успешно скачан с удаленного сервера");
+                        isRemoteFileDownloaded = true;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("⚠️ Не удалось скачать файл с удаленного сервера");
+
+                        if (!File.Exists(_sourceXmlPath))
+                        {
+                            _logger.LogError("❌ Нет доступа к удаленному файлу и нет локальной копии");
+                            return false;
+                        }
+
+                        _logger.LogInformation("Использую локальную копию файла");
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("Проверка локального source файла...");
+                }
 
                 if (!File.Exists(_sourceXmlPath))
                 {
@@ -301,16 +430,30 @@ namespace CourseXML_main.CourseXML.Services
                 }
 
                 string sourceContent;
-                using (var stream = new FileStream(_sourceXmlPath, FileMode.Open,
-                       FileAccess.Read, FileShare.ReadWrite))
-                using (var reader = new StreamReader(stream))
+                try
                 {
-                    sourceContent = await reader.ReadToEndAsync();
+                    using (var stream = new FileStream(_sourceXmlPath, FileMode.Open,
+                           FileAccess.Read, FileShare.ReadWrite))
+                    using (var reader = new StreamReader(stream))
+                    {
+                        sourceContent = await reader.ReadToEndAsync();
+                    }
+                }
+                catch (IOException ioEx)
+                {
+                    _logger.LogError(ioEx, "Ошибка чтения файла {Path}. Возможно файл занят другим процессом.",
+                        _sourceXmlPath);
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Неизвестная ошибка при чтении файла");
+                    return false;
                 }
 
-                if (string.IsNullOrEmpty(sourceContent))
+                if (string.IsNullOrWhiteSpace(sourceContent))
                 {
-                    _logger.LogWarning("Source файл пустой");
+                    _logger.LogWarning("Source файл пустой или содержит только пробелы");
                     return false;
                 }
 
@@ -318,40 +461,55 @@ namespace CourseXML_main.CourseXML.Services
                 try
                 {
                     sourceXml = XDocument.Parse(sourceContent);
+                    _logger.LogDebug("XML успешно распарсен");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Ошибка парсинга source XML");
+                    _logger.LogError(ex, "Ошибка парсинга source XML. Проверьте формат файла.");
                     return false;
                 }
 
                 var sourceOffices = ParseXml(sourceXml);
                 if (!sourceOffices.Any())
                 {
-                    _logger.LogWarning("Не удалось распарсить source XML");
+                    _logger.LogWarning("Не удалось извлечь данные из XML. Файл может быть пустым или иметь неверную структуру.");
                     return false;
                 }
 
+                _logger.LogInformation("Получено {Count} офисов из source файла", sourceOffices.Count);
+
                 List<CityOffice> currentOffices = ReadCurrentFile();
+                _logger.LogDebug("Текущий файл содержит {Count} офисов", currentOffices.Count);
 
                 bool dataChanged = !AreOfficesEqual(currentOffices, sourceOffices);
 
                 if (!dataChanged)
                 {
-                    _logger.LogInformation("Данные не изменились");
+                    if (isRemoteFileDownloaded)
+                    {
+                        _logger.LogInformation("Данные не изменились после скачивания с удаленного сервера");
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Данные не изменились");
+                    }
                     return false;
                 }
 
-                _logger.LogInformation("Обнаружены новые курсы, начинаем обновление...");
+                _logger.LogInformation("Обнаружены изменения в курсах валют! Начинаем обновление...");
 
                 if (File.Exists(_currentXmlPath))
                 {
                     try
                     {
-                        var archiveName = $"rates_{DateTime.Now:yyyyMMdd_HHmmss}.xml";
+                        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                        var archiveName = $"rates_{timestamp}.xml";
                         var archivePath = Path.Combine(_archiveFolder, archiveName);
+
+                        Directory.CreateDirectory(_archiveFolder);
+
                         File.Copy(_currentXmlPath, archivePath, true);
-                        _logger.LogInformation("Создана архивная копия");
+                        _logger.LogInformation("Создана архивная копия: {ArchiveName}", archiveName);
                     }
                     catch (Exception ex)
                     {
@@ -359,19 +517,51 @@ namespace CourseXML_main.CourseXML.Services
                     }
                 }
 
-                await File.WriteAllTextAsync(_currentXmlPath, sourceContent);
-                _logger.LogInformation("Current файл обновлён из source");
+                try
+                {
+                    await File.WriteAllTextAsync(_currentXmlPath, sourceContent);
+                    _logger.LogInformation("Current файл обновлён");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Критическая ошибка записи current файла");
+                    return false;
+                }
 
                 _offices = sourceOffices;
+                _logger.LogInformation("Данные в памяти обновлены");
 
-                await SendUpdatesToClients();
+                try
+                {
+                    await SendUpdatesToClients();
+                    _logger.LogInformation("Обновления отправлены клиентам");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Ошибка отправки обновлений клиентам, но данные обновлены");
+                }
 
-                _logger.LogInformation("Обновление успешно завершено");
+                if (_config.EnableVerboseLogging)
+                {
+                    foreach (var office in _offices)
+                    {
+                        _logger.LogDebug("Офис {OfficeId} ({Location}): {Count} валют",
+                            office.Id, office.Location, office.Currencies.Count);
+
+                        foreach (var currency in office.Currencies)
+                        {
+                            _logger.LogDebug("  {Currency}: покупка {Purchase}, продажа {Sale}",
+                                currency.Name, currency.Purchase, currency.Sale);
+                        }
+                    }
+                }
+
+                _logger.LogInformation("Обновление успешно завершено!");
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ошибка обновления из source");
+                _logger.LogError(ex, "Критическая ошибка в методе CheckAndUpdateFromSourceAsync");
                 return false;
             }
             finally

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// SignalR
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
@@ -19,11 +20,18 @@ builder.Services.AddSignalR(options =>
 
 builder.Services.AddControllersWithViews();
 
+// КОНФИГУРАЦИЯ
 builder.Services.Configure<CurrencyServiceConfig>(
     builder.Configuration.GetSection("CurrencyService"));
 
+// ВОТ ЭТО ВАЖНО - регистрируем RemoteServerSettings!
+builder.Services.Configure<RemoteServerSettings>(
+    builder.Configuration.GetSection("RemoteServer"));
+
+// Hosted Service
 builder.Services.AddHostedService<CurrencyService>();
 
+// Singleton для доступа из контроллеров
 builder.Services.AddSingleton<CurrencyService>(provider =>
 {
     var hostedServices = provider.GetServices<IHostedService>();
@@ -35,17 +43,20 @@ builder.Services.AddSingleton<CurrencyService>(provider =>
         var hubContext = provider.GetRequiredService<IHubContext<CurrencyHub>>();
         var configuration = provider.GetRequiredService<IConfiguration>();
         var config = provider.GetRequiredService<IOptions<CurrencyServiceConfig>>();
+        var remoteSettings = provider.GetRequiredService<IOptions<RemoteServerSettings>>(); // ДОБАВИЛИ
 
-        currencyService = new CurrencyService(logger, hubContext, configuration, config);
+        currencyService = new CurrencyService(logger, hubContext, configuration, config, remoteSettings);
     }
 
     return currencyService;
 });
 
+// Kestrel
 builder.WebHost.UseUrls("http://0.0.0.0:5050");
 
 var app = builder.Build();
 
+// Middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
@@ -60,45 +71,21 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthorization();
 
+// CORS
 app.UseCors(builder => builder
     .AllowAnyOrigin()
     .AllowAnyMethod()
     .AllowAnyHeader());
 
+// SignalR
 app.MapHub<CurrencyHub>("/currencyHub");
 
+// MVC
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Course}/{action=Index}/{id?}");
 
-app.MapGet("/debug/currency", async (CurrencyService service) =>
-{
-    if (!service.IsInitialized)
-    {
-        return Results.Json(new
-        {
-            Status = "NotInitialized",
-            Message = "Service is initializing..."
-        });
-    }
 
-    var office = service.GetOffice("tlt");
-    var allOffices = service.GetAllOffices();
-
-    return Results.Json(new
-    {
-        Status = "OK",
-        Initialized = service.IsInitialized,
-        OfficesCount = allOffices.Count,
-        TLTOffice = office != null ? new
-        {
-            Location = office.Location,
-            CurrenciesCount = office.Currencies.Count
-        } : null
-    });
-});
-
-// Принудительное обновление
 app.MapGet("/debug/force-update", async (CurrencyService service) =>
 {
     var result = await service.ForceUpdateFromSourceAsync();
@@ -110,7 +97,6 @@ app.MapGet("/debug/force-update", async (CurrencyService service) =>
     });
 });
 
-// Health check
 app.MapGet("/health", () =>
 {
     return Results.Json(new
@@ -121,7 +107,6 @@ app.MapGet("/health", () =>
     });
 });
 
-// Симуляция изменения курсов для тестов
 app.MapGet("/debug/simulate-update", async (CurrencyService service, IHubContext<CurrencyHub> hubContext) =>
 {
     try
@@ -173,43 +158,60 @@ app.MapGet("/debug/simulate-update", async (CurrencyService service, IHubContext
     }
 });
 
-app.MapGet("/debug/signalr-info", () =>
+// Endpoint для тестирования удаленного подключения
+app.MapGet("/debug/test-remote", (IOptions<RemoteServerSettings> remoteSettings) =>
 {
+    var settings = remoteSettings.Value;
     return Results.Json(new
     {
-        Message = "SignalR доступен по адресу /currencyHub",
-        Endpoints = new[]
-        {
-            "/currencyHub",
-            "/debug/simulate-update",
-            "/debug/force-update"
-        },
-        Timestamp = DateTime.UtcNow
+        Host = settings.Host,
+        Username = settings.Username,
+        RemoteDirectory = settings.RemoteDirectory,
+        FileName = settings.FileName,
+        Port = settings.Port,
+        UseSshKey = settings.UseSshKey,
+        FullRemotePath = settings.FullRemotePath,
+        ConnectionString = settings.SshConnectionString
     });
 });
 
-// Простой ping-pong для теста SignalR
-app.MapGet("/debug/ping", async (IHubContext<CurrencyHub> hubContext) =>
+// Проверка SSH подключения
+app.MapGet("/debug/test-ssh", async (IOptions<RemoteServerSettings> remoteSettings, ILogger<Program> logger) =>
 {
     try
     {
-        // Отправляем ping всем подключенным клиентам
-        await hubContext.Clients.All.SendAsync("KeepAlive", DateTime.UtcNow.ToString("o"));
+        var settings = remoteSettings.Value;
+
+        if (string.IsNullOrEmpty(settings.Host))
+        {
+            return Results.Json(new { Success = false, Message = "Host not configured" });
+        }
+
+        using var process = new System.Diagnostics.Process();
+        process.StartInfo.FileName = "ssh";
+        process.StartInfo.Arguments = $"-o StrictHostKeyChecking=no -o ConnectTimeout=5 {settings.Username}@{settings.Host} echo 'SSH test successful'";
+        process.StartInfo.RedirectStandardOutput = true;
+        process.StartInfo.RedirectStandardError = true;
+        process.StartInfo.UseShellExecute = false;
+
+        process.Start();
+        await process.WaitForExitAsync();
+
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var error = await process.StandardError.ReadToEndAsync();
 
         return Results.Json(new
         {
-            Success = true,
-            Message = "Ping отправлен всем клиентам",
-            Timestamp = DateTime.UtcNow
+            Success = process.ExitCode == 0,
+            ExitCode = process.ExitCode,
+            Output = output,
+            Error = error
         });
     }
     catch (Exception ex)
     {
-        return Results.Json(new
-        {
-            Success = false,
-            Message = ex.Message
-        });
+        logger.LogError(ex, "SSH test failed");
+        return Results.Json(new { Success = false, Message = ex.Message });
     }
 });
 
