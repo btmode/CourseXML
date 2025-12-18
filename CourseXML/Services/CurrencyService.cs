@@ -31,46 +31,145 @@ namespace CourseXML_main.CourseXML.Services
             IHubContext<CurrencyHub> hubContext,
             IConfiguration configuration,
             IOptions<CurrencyServiceConfig> config,
-            IOptions<RemoteServerSettings> remoteSettings) 
+            IOptions<RemoteServerSettings> remoteSettings)
         {
             _logger = logger;
             _hubContext = hubContext;
             _configuration = configuration;
             _config = config.Value;
-            _remoteSettings = remoteSettings.Value; 
+            _remoteSettings = remoteSettings.Value;
 
             // АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПУТЕЙ ДЛЯ WINDOWS/LINUX
             (_sourceXmlPath, _currentXmlPath, _archiveFolder) = GetPathsForCurrentOS();
 
-            _logger.LogInformation("=== CURRENCY SERVICE ИНИЦИАЛИЗАЦИЯ ===");
-            _logger.LogInformation("OS: {OS}", Environment.OSVersion.Platform);
-            _logger.LogInformation("Source: {Source}", _sourceXmlPath);
-            _logger.LogInformation("Current: {Current}", _currentXmlPath);
-            _logger.LogInformation("Archive: {Archive}", _archiveFolder);
+            _logger.LogCritical("=== CURRENCY SERVICE ИНИЦИАЛИЗАЦИЯ ===");
+            _logger.LogCritical("OS: {OS}", Environment.OSVersion.Platform);
+            _logger.LogCritical("Source path: {Source}", _sourceXmlPath);
+            _logger.LogCritical("Current path: {Current}", _currentXmlPath);
+            _logger.LogCritical("Archive folder: {Archive}", _archiveFolder);
+            _logger.LogCritical("Local source file exists: {Exists}", File.Exists(_sourceXmlPath));
+            _logger.LogCritical("UseRemoteFile: {UseRemote}", _config.UseRemoteFile);
 
             // Логируем настройки удаленного сервера если используются
             if (_config.UseRemoteFile && !string.IsNullOrEmpty(_remoteSettings.Host))
             {
-                _logger.LogInformation("Удаленный сервер: {User}@{Host}:{Port}",
+                _logger.LogCritical("Удаленный сервер: {User}@{Host}:{Port}",
                     _remoteSettings.Username, _remoteSettings.Host, _remoteSettings.Port);
-                _logger.LogInformation("Удаленный файл: {Path}", _remoteSettings.FullRemotePath);
+                _logger.LogCritical("Удаленный файл: {Path}", _remoteSettings.FullRemotePath);
+                _logger.LogCritical("Полный remote путь: {FullPath}",
+                    $"{_remoteSettings.Username}@{_remoteSettings.Host}:{_remoteSettings.FullRemotePath}");
             }
 
             EnsureDirectories();
-
             EnsureCurrentFile();
-
             LoadData();
 
-            if (_config.UseFileSystemWatcher)
+            // Если используем удаленный файл - тестируем подключение при старте
+            if (_config.UseRemoteFile && !string.IsNullOrEmpty(_remoteSettings.Host))
+            {
+                // Запускаем асинхронно, не блокируя конструктор
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(2000); // Даем сервису немного запуститься
+                    await TestRemoteConnectionAsync();
+
+                    // Принудительно скачиваем файл при старте
+                    await DownloadFromRemoteServerAsync();
+                    await CheckAndUpdateFromSourceAsync();
+                });
+            }
+
+            if (_config.UseFileSystemWatcher && !_config.UseRemoteFile)
             {
                 SetupSourceFileWatcher();
             }
 
             _lastSourceCheck = GetSourceFileLastWriteTime();
-
             _isInitialized = true;
             _logger.LogInformation("CurrencyService инициализирован. Офисов: {Count}", _offices.Count);
+        }
+
+        // НОВЫЙ МЕТОД: Тест подключения к удаленному серверу
+        public async Task<bool> TestRemoteConnectionAsync()
+        {
+            try
+            {
+                if (_remoteSettings == null ||
+                    string.IsNullOrEmpty(_remoteSettings.Host) ||
+                    string.IsNullOrEmpty(_remoteSettings.Username))
+                {
+                    _logger.LogError("Не настроен удаленный сервер для тестирования");
+                    return false;
+                }
+
+                _logger.LogInformation("🧪 Тестирование подключения к удаленному серверу {Host}...",
+                    _remoteSettings.Host);
+
+                var testFile = Path.Combine(Path.GetTempPath(), $"test_remote_{Guid.NewGuid()}.xml");
+                var remotePath = $"{_remoteSettings.Username}@{_remoteSettings.Host}:{_remoteSettings.FullRemotePath}";
+
+                var process = new Process();
+                process.StartInfo.FileName = "scp";
+
+                string arguments = $"-P {_remoteSettings.Port} " +
+                                  "-o StrictHostKeyChecking=no " +
+                                  "-o ConnectTimeout=5 " +
+                                  $"{remotePath} \"{testFile}\"";
+
+                if (_remoteSettings.UseSshKey && !string.IsNullOrEmpty(_remoteSettings.SshKeyPath))
+                {
+                    if (!File.Exists(_remoteSettings.SshKeyPath))
+                    {
+                        _logger.LogError("SSH ключ не найден: {Path}", _remoteSettings.SshKeyPath);
+                        return false;
+                    }
+                    arguments = $"-i \"{_remoteSettings.SshKeyPath}\" " + arguments;
+                }
+                else if (!string.IsNullOrEmpty(_remoteSettings.Password))
+                {
+                    process.StartInfo.FileName = "sshpass";
+                    arguments = $"-p \"{_remoteSettings.Password}\" scp " + arguments;
+                }
+
+                process.StartInfo.Arguments = arguments;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+
+                _logger.LogDebug("Тестовая команда: {Command} {Args}",
+                    process.StartInfo.FileName, process.StartInfo.Arguments);
+
+                process.Start();
+                await process.WaitForExitAsync();
+
+                var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
+
+                if (process.ExitCode == 0 && File.Exists(testFile))
+                {
+                    var content = await File.ReadAllTextAsync(testFile);
+                    _logger.LogInformation("✅ Подключение успешно! Файл скачан, размер: {Size} байт",
+                        content.Length);
+                    File.Delete(testFile);
+                    return true;
+                }
+                else
+                {
+                    _logger.LogError("❌ Ошибка подключения. Код: {ExitCode}, Ошибка: {Error}",
+                        process.ExitCode, error);
+
+                    if (File.Exists(testFile))
+                        File.Delete(testFile);
+
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Исключение при тесте подключения");
+                return false;
+            }
         }
 
         private async Task<bool> DownloadFromRemoteServerAsync()
@@ -138,12 +237,12 @@ namespace CourseXML_main.CourseXML.Services
 
                 if (process.ExitCode == 0)
                 {
-                    _logger.LogInformation("Файл успешно скачан с {Host}", _remoteSettings.Host);
+                    _logger.LogInformation("✅ Файл успешно скачан с {Host}", _remoteSettings.Host);
                     return true;
                 }
                 else
                 {
-                    _logger.LogError("Ошибка скачивания. Код: {ExitCode}, Ошибка: {Error}",
+                    _logger.LogError("❌ Ошибка скачивания. Код: {ExitCode}, Ошибка: {Error}",
                         process.ExitCode, error);
                     return false;
                 }
@@ -154,7 +253,6 @@ namespace CourseXML_main.CourseXML.Services
                 return false;
             }
         }
-
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -182,6 +280,7 @@ namespace CourseXML_main.CourseXML.Services
                     {
                         try
                         {
+                            _logger.LogDebug("🔄 Запуск удаленного polling цикла...");
                             await CheckAndUpdateFromSourceAsync();
                         }
                         catch (Exception ex)
@@ -274,7 +373,7 @@ namespace CourseXML_main.CourseXML.Services
                     }
 
                     _lastSourceCheck = currentSourceLastWrite;
-                    await Task.Delay(300); 
+                    await Task.Delay(300);
                     await CheckAndUpdateFromSourceAsync();
                 }
             }
@@ -328,7 +427,7 @@ namespace CourseXML_main.CourseXML.Services
                 _logger.LogInformation("FileSystemWatcher настроен для {OS} с буфером {BufferSize} байт",
                     isLinux ? "Linux" : "Windows", bufferSize);
 
-                int debounceMs = isLinux ? 1000 : 300; 
+                int debounceMs = isLinux ? 1000 : 300;
 
                 _sourceFileWatcher.Changed += async (sender, e) =>
                 {
@@ -392,43 +491,44 @@ namespace CourseXML_main.CourseXML.Services
 
             try
             {
-                bool isRemoteFileDownloaded = false;
+                bool remoteDownloadAttempted = false;
+                bool remoteDownloadSuccessful = false;
 
+                // === ИСПРАВЛЕНИЕ: Сначала всегда пытаемся скачать с удаленного ===
                 if (_config.UseRemoteFile && !string.IsNullOrEmpty(_remoteSettings?.Host))
                 {
-                    _logger.LogInformation("🔄 Проверка удаленного файла на сервере {Host}...",
+                    _logger.LogInformation("🔄 Обязательная проверка удаленного сервера {Host}...",
                         _remoteSettings.Host);
 
-                    var downloaded = await DownloadFromRemoteServerAsync();
-                    if (downloaded)
+                    remoteDownloadAttempted = true;
+                    remoteDownloadSuccessful = await DownloadFromRemoteServerAsync();
+
+                    if (remoteDownloadSuccessful)
                     {
-                        _logger.LogInformation("✅ Файл успешно скачан с удаленного сервера");
-                        isRemoteFileDownloaded = true;
+                        _logger.LogInformation("✅ Файл скачан с удаленного сервера");
                     }
                     else
                     {
-                        _logger.LogWarning("⚠️ Не удалось скачать файл с удаленного сервера");
-
-                        if (!File.Exists(_sourceXmlPath))
-                        {
-                            _logger.LogError("❌ Нет доступа к удаленному файлу и нет локальной копии");
-                            return false;
-                        }
-
-                        _logger.LogInformation("Использую локальную копию файла");
+                        _logger.LogWarning("⚠️ Не удалось скачать с удаленного сервера");
                     }
                 }
-                else
-                {
-                    _logger.LogInformation("Проверка локального source файла...");
-                }
 
+                // === ИСПРАВЛЕНИЕ: Если удаленный не скачан и локального нет - ошибка ===
                 if (!File.Exists(_sourceXmlPath))
                 {
-                    _logger.LogWarning("Source файл не найден: {Path}", _sourceXmlPath);
-                    return false;
+                    if (remoteDownloadAttempted && !remoteDownloadSuccessful)
+                    {
+                        _logger.LogError("❌ Нет доступа к удаленному файлу и нет локальной копии");
+                        return false;
+                    }
+                    else if (!remoteDownloadAttempted)
+                    {
+                        _logger.LogWarning("Source файл не найден: {Path}", _sourceXmlPath);
+                        return false;
+                    }
                 }
 
+                // Чтение файла
                 string sourceContent;
                 try
                 {
@@ -485,9 +585,13 @@ namespace CourseXML_main.CourseXML.Services
 
                 if (!dataChanged)
                 {
-                    if (isRemoteFileDownloaded)
+                    if (remoteDownloadSuccessful)
                     {
                         _logger.LogInformation("Данные не изменились после скачивания с удаленного сервера");
+                    }
+                    else if (remoteDownloadAttempted)
+                    {
+                        _logger.LogInformation("Данные не изменились (удаленный файл не скачан)");
                     }
                     else
                     {
@@ -798,7 +902,7 @@ namespace CourseXML_main.CourseXML.Services
             return _offices.ToList();
         }
 
-        //   ОПРЕДЕЛЕНИЕ ПУТЕЙ 
+        // ОПРЕДЕЛЕНИЕ ПУТЕЙ 
         private (string source, string current, string archive) GetPathsForCurrentOS()
         {
             string source, current, archive;
@@ -806,7 +910,6 @@ namespace CourseXML_main.CourseXML.Services
             if (Environment.OSVersion.Platform == PlatformID.Unix ||
                 Environment.OSVersion.Platform == PlatformID.MacOSX)
             {
-                // Linux/Mac пути
                 source = _configuration["LinuxPaths:SourceXmlPath"]
                     ?? "/var/www/coursexml/Data/rates.xml";
                 current = _configuration["LinuxPaths:CurrentXmlPath"]
@@ -816,7 +919,6 @@ namespace CourseXML_main.CourseXML.Services
             }
             else
             {
-                // Windows пути
                 source = _configuration["LocalPaths:SourceXmlPath"]
                     ?? "C:\\Users\\danon\\Desktop\\rates.xml";
                 current = _configuration["LocalPaths:CurrentXmlPath"]
@@ -825,7 +927,6 @@ namespace CourseXML_main.CourseXML.Services
                     ?? "C:\\Users\\danon\\Desktop\\CourseXML\\CourseXML\\Data\\archive\\";
             }
 
-            // Если пути заданы в конфиге сервиса - используем их
             if (!string.IsNullOrEmpty(_config.SourceXmlPath))
                 source = _config.SourceXmlPath;
             if (!string.IsNullOrEmpty(_config.CurrentXmlPath))

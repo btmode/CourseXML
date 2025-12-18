@@ -20,18 +20,14 @@ builder.Services.AddSignalR(options =>
 
 builder.Services.AddControllersWithViews();
 
-// КОНФИГУРАЦИЯ
 builder.Services.Configure<CurrencyServiceConfig>(
     builder.Configuration.GetSection("CurrencyService"));
 
-// ВОТ ЭТО ВАЖНО - регистрируем RemoteServerSettings!
 builder.Services.Configure<RemoteServerSettings>(
     builder.Configuration.GetSection("RemoteServer"));
 
-// Hosted Service
 builder.Services.AddHostedService<CurrencyService>();
 
-// Singleton для доступа из контроллеров
 builder.Services.AddSingleton<CurrencyService>(provider =>
 {
     var hostedServices = provider.GetServices<IHostedService>();
@@ -43,7 +39,7 @@ builder.Services.AddSingleton<CurrencyService>(provider =>
         var hubContext = provider.GetRequiredService<IHubContext<CurrencyHub>>();
         var configuration = provider.GetRequiredService<IConfiguration>();
         var config = provider.GetRequiredService<IOptions<CurrencyServiceConfig>>();
-        var remoteSettings = provider.GetRequiredService<IOptions<RemoteServerSettings>>(); // ДОБАВИЛИ
+        var remoteSettings = provider.GetRequiredService<IOptions<RemoteServerSettings>>(); 
 
         currencyService = new CurrencyService(logger, hubContext, configuration, config, remoteSettings);
     }
@@ -173,6 +169,22 @@ app.MapGet("/debug/test-remote", (IOptions<RemoteServerSettings> remoteSettings)
         FullRemotePath = settings.FullRemotePath,
         ConnectionString = settings.SshConnectionString
     });
+});
+
+// Добавьте эндпоинт для отладки
+app.MapGet("/debug/remote", async (CurrencyService service) =>
+{
+    return Results.Json(new
+    {
+        Timestamp = DateTime.UtcNow,
+        TestResult = await service.TestRemoteConnectionAsync()
+    });
+});
+
+app.MapGet("/debug/force-update", async (CurrencyService service) =>
+{
+    var result = await service.ForceUpdateFromSourceAsync();
+    return Results.Json(new { Success = result });
 });
 
 // Проверка SSH подключения
