@@ -23,9 +23,6 @@ builder.Services.AddControllersWithViews();
 builder.Services.Configure<CurrencyServiceConfig>(
     builder.Configuration.GetSection("CurrencyService"));
 
-builder.Services.Configure<RemoteServerSettings>(
-    builder.Configuration.GetSection("RemoteServer"));
-
 builder.Services.AddHostedService<CurrencyService>();
 
 builder.Services.AddSingleton<CurrencyService>(provider =>
@@ -39,9 +36,8 @@ builder.Services.AddSingleton<CurrencyService>(provider =>
         var hubContext = provider.GetRequiredService<IHubContext<CurrencyHub>>();
         var configuration = provider.GetRequiredService<IConfiguration>();
         var config = provider.GetRequiredService<IOptions<CurrencyServiceConfig>>();
-        var remoteSettings = provider.GetRequiredService<IOptions<RemoteServerSettings>>(); 
 
-        currencyService = new CurrencyService(logger, hubContext, configuration, config, remoteSettings);
+        currencyService = new CurrencyService(logger, hubContext, configuration, config);
     }
 
     return currencyService;
@@ -81,7 +77,7 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Course}/{action=Index}/{id?}");
 
-
+// Эндпоинты для отладки
 app.MapGet("/debug/force-update", async (CurrencyService service) =>
 {
     var result = await service.ForceUpdateFromSourceAsync();
@@ -154,77 +150,16 @@ app.MapGet("/debug/simulate-update", async (CurrencyService service, IHubContext
     }
 });
 
-// Endpoint для тестирования удаленного подключения
-app.MapGet("/debug/test-remote", (IOptions<RemoteServerSettings> remoteSettings) =>
-{
-    var settings = remoteSettings.Value;
-    return Results.Json(new
-    {
-        Host = settings.Host,
-        Username = settings.Username,
-        RemoteDirectory = settings.RemoteDirectory,
-        FileName = settings.FileName,
-        Port = settings.Port,
-        UseSshKey = settings.UseSshKey,
-        FullRemotePath = settings.FullRemotePath,
-        ConnectionString = settings.SshConnectionString
-    });
-});
-
-// Добавьте эндпоинт для отладки
-app.MapGet("/debug/remote", async (CurrencyService service) =>
+// Информация о путях
+app.MapGet("/debug/paths", (IConfiguration configuration, CurrencyService service) =>
 {
     return Results.Json(new
     {
-        Timestamp = DateTime.UtcNow,
-        TestResult = await service.TestRemoteConnectionAsync()
+        SourcePath = configuration["LinuxPaths:SourceXmlPath"],
+        CurrentPath = configuration["LinuxPaths:CurrentXmlPath"],
+        ArchivePath = configuration["LinuxPaths:ArchiveFolder"],
+        Timestamp = DateTime.UtcNow
     });
-});
-
-app.MapGet("/debug/force-update", async (CurrencyService service) =>
-{
-    var result = await service.ForceUpdateFromSourceAsync();
-    return Results.Json(new { Success = result });
-});
-
-// Проверка SSH подключения
-app.MapGet("/debug/test-ssh", async (IOptions<RemoteServerSettings> remoteSettings, ILogger<Program> logger) =>
-{
-    try
-    {
-        var settings = remoteSettings.Value;
-
-        if (string.IsNullOrEmpty(settings.Host))
-        {
-            return Results.Json(new { Success = false, Message = "Host not configured" });
-        }
-
-        using var process = new System.Diagnostics.Process();
-        process.StartInfo.FileName = "ssh";
-        process.StartInfo.Arguments = $"-o StrictHostKeyChecking=no -o ConnectTimeout=5 {settings.Username}@{settings.Host} echo 'SSH test successful'";
-        process.StartInfo.RedirectStandardOutput = true;
-        process.StartInfo.RedirectStandardError = true;
-        process.StartInfo.UseShellExecute = false;
-
-        process.Start();
-        await process.WaitForExitAsync();
-
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var error = await process.StandardError.ReadToEndAsync();
-
-        return Results.Json(new
-        {
-            Success = process.ExitCode == 0,
-            ExitCode = process.ExitCode,
-            Output = output,
-            Error = error
-        });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "SSH test failed");
-        return Results.Json(new { Success = false, Message = ex.Message });
-    }
 });
 
 app.Run();

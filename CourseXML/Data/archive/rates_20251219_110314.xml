@@ -47,23 +47,23 @@
   <office id="msk" location="Москва">
     <currency>
       <name>USD</name>
-      <purchase>93.20</purchase>
-      <sale>98.50</sale>
+      <purchase>90.20</purchase>
+      <sale>96.50</sale>
     </currency>
     <currency>
       <name>EUR</name>
-      <purchase>100.00</purchase>
-      <sale>106.30</sale>
+      <purchase>96.00</purchase>
+      <sale>109.30</sale>
     </currency>
     <currency>
       <name>GBP</name>
-      <purchase>112.50</purchase>
-      <sale>120.30</sale>
+      <purchase>122.50</purchase>
+      <sale>125.30</sale>
     </currency>
     <currency>
       <name>CNY</name>
       <purchase>13.80</purchase>
-      <sale>14.50</sale>
+      <sale>15.50</sale>
     </currency>
   </office>
 </exchangeRates>
