@@ -63,13 +63,14 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    border: calc(1px * var(--scale-factor)) solid var(--primary-green);
     margin-bottom: calc(20px * var(--scale-factor));
     padding: calc(30px * var(--scale-factor));
     border-radius: calc(40px * var(--scale-factor));
     box-shadow: var(--shadow);
     background: var(--white);
-    width: 100%; 
-    max-width: calc(1800px * var(--scale-factor)); 
+    width: 100%;
+    max-width: calc(1800px * var(--scale-factor));
     min-width: calc(1200px * var(--scale-factor));
     margin-left: 0;
 }
@@ -78,7 +79,7 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: calc(0px * var(--scale-factor)); 
+    gap: calc(0px * var(--scale-factor));
 }
 
 .bank-name {
@@ -146,6 +147,7 @@ body {
     overflow: hidden; 
     box-shadow: var(--shadow);
     background: var(--white);
+
 }
 
     .currency-table thead {
