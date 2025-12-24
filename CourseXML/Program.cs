@@ -1,5 +1,6 @@
 using CourseXML.Models;
 using CourseXML_main.CourseXML.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 
@@ -72,86 +73,35 @@ app.UseCors(builder => builder
 // SignalR
 app.MapHub<CurrencyHub>("/currencyHub");
 
-// MVC
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Course}/{action=Index}/{id?}");
-
-// Эндпоинты для отладки
-app.MapGet("/debug/force-update", async (CurrencyService service) =>
-{
-    var result = await service.ForceUpdateFromSourceAsync();
-    return Results.Json(new
-    {
-        Success = result,
-        Message = result ? "Update successful" : "No changes detected",
-        Timestamp = DateTime.UtcNow
-    });
-});
 
 app.MapGet("/health", () =>
 {
     return Results.Json(new
     {
-        Status = "OK",
+        Status = Results.StatusCode(200),
+        Message = "OK",
         Timestamp = DateTime.UtcNow,
         Service = "CourseXML"
     });
 });
 
-app.MapGet("/debug/simulate-update", async (CurrencyService service, IHubContext<CurrencyHub> hubContext) =>
+// Информация о путях
+app.MapGet("/debug/DevPaths", (IConfiguration configuration, CurrencyService service) =>
 {
-    try
+    return Results.Json(new
     {
-        var office = service.GetOffice("tlt");
-        if (office != null)
-        {
-            var random = new Random();
-            var updatedCurrencies = office.Currencies.Select(c => new
-            {
-                c.Name,
-                Purchase = Math.Round(c.Purchase + (decimal)(random.NextDouble() * 0.1 - 0.05), 2),
-                Sale = Math.Round(c.Sale + (decimal)(random.NextDouble() * 0.1 - 0.05), 2)
-            }).ToList();
-
-            var payload = new
-            {
-                office.Id,
-                office.Location,
-                Currencies = updatedCurrencies,
-                UpdateTime = DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss"),
-                Simulated = true
-            };
-
-            await hubContext.Clients.Group(office.Id.ToLower()).SendAsync("ReceiveUpdate", payload);
-
-            return Results.Json(new
-            {
-                Success = true,
-                Message = "Simulated update sent",
-                Office = office.Id,
-                Currencies = updatedCurrencies
-            });
-        }
-
-        return Results.Json(new
-        {
-            Success = false,
-            Message = "Office not found"
-        });
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new
-        {
-            Success = false,
-            Message = ex.Message
-        });
-    }
+        SourcePath = configuration["LocalPaths:SourceXmlPath"],
+        CurrentPath = configuration["LocalPaths:CurrentXmlPath"],
+        ArchivePath = configuration["LocalPaths:ArchiveFolder"],
+        Timestamp = DateTime.UtcNow
+    });
 });
 
 // Информация о путях
-app.MapGet("/debug/paths", (IConfiguration configuration, CurrencyService service) =>
+app.MapGet("/debug/LinuxPaths", (IConfiguration configuration, CurrencyService service) =>
 {
     return Results.Json(new
     {

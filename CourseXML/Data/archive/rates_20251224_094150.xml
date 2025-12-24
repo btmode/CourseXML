@@ -62,8 +62,8 @@
     </currency>
     <currency>
       <name>CNY</name>
-      <purchase>12.99</purchase>
-      <sale>13.80</sale>
+      <purchase>13.80</purchase>
+      <sale>14.50</sale>
     </currency>
   </office>
 </exchangeRates>
