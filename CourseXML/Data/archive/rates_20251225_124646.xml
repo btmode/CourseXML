@@ -47,22 +47,22 @@
 	<office id="msk" location="������">
 		<currency>
 			<name>USD</name>
-			<purchase>81.60</purchase>
-			<sale>84.50</sale>
+			<purchase>85</purchase>
+			<sale>83.10</sale>
 		</currency>
 		<currency>
 			<name>EUR</name>
-			<purchase>94.2</purchase>
-			<sale>97.2</sale>
+			<purchase>93.2</purchase>
+			<sale>96.2</sale>
 		</currency>
 		<currency>
 			<name>CNY</name>
-			<purchase>11.55</purchase>
-			<sale>13.70</sale>
+			<purchase>10.7</purchase>
+			<sale>11.7</sale>
 		</currency>
 		<currency>
 			<name>GBP</name>
-			<purchase>105</purchase>
+			<purchase>30</purchase>
 			<sale>115</sale>
 		</currency>
 	</office>
